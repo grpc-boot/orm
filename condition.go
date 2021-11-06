@@ -57,7 +57,14 @@ func (c *condition) Sql(args *[]interface{}) (sql string) {
 		}
 
 		operator = "="
-		position = strings.Index(field, " ")
+		position = 0
+		for index, r := range field {
+			if r == ' ' {
+				position = index
+				break
+			}
+		}
+
 		if position > 0 {
 			operator = strings.ToUpper(field[position+1:])
 			field = field[:position]

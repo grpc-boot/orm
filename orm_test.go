@@ -1,7 +1,10 @@
 package orm
 
+// go test . -v
+// go test -bench=. -benchmem -benchtime=5s
 import (
 	"testing"
+	"time"
 
 	"github.com/grpc-boot/base"
 )
@@ -60,5 +63,95 @@ func TestMysqlQuery_Sql(t *testing.T) {
 	t.Log(query.Sql(&args), args)
 
 	query.Offset(100).Limit(10)
-	t.Fatal(query.Sql(&args), args)
+
+	args = args[:0]
+	t.Log(query.Sql(&args), args)
+}
+
+func TestInsert(t *testing.T) {
+	args := base.AcquireArgs()
+	defer base.ReleaseArgs(&args)
+
+	sql := Insert(&args, "`user`", map[string]interface{}{
+		"`name`":       time.Now().String(),
+		"`created_at`": time.Now().UnixNano(),
+	}, map[string]interface{}{
+		"`name`":       time.Now().String(),
+		"`created_at`": time.Now().UnixNano(),
+	})
+	t.Log(sql, args)
+}
+
+func TestUpdateAll(t *testing.T) {
+	args := base.AcquireArgs()
+	defer base.ReleaseArgs(&args)
+
+	sql := UpdateAll(&args, "`user`", map[string]interface{}{
+		"`name`":       time.Now().String(),
+		"`created_at`": time.Now().UnixNano(),
+	}, Where{
+		andCondition(map[string][]interface{}{
+			"`id`": {1, 3, 5},
+		}),
+		orCondition(map[string][]interface{}{
+			"`status`": {1},
+		}),
+	})
+
+	t.Log(sql, args)
+}
+
+func TestDeleteAll(t *testing.T) {
+	args := base.AcquireArgs()
+	defer base.ReleaseArgs(&args)
+
+	sql := DeleteAll(&args, "`user`", Where{
+		andCondition(map[string][]interface{}{
+			"`id`": {1, 3, 5},
+		}),
+		orCondition(map[string][]interface{}{
+			"`status`": {1},
+		}),
+	})
+
+	t.Log(sql, args)
+}
+
+// BenchmarkMysqlQuery_Sql-4         951957              1088 ns/op            1000 B/op         20 allocs/op
+func BenchmarkMysqlQuery_Sql(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			query := NewMysqlQuery()
+			args := base.AcquireArgs()
+
+			query.From("`user`").Where(map[string][]interface{}{
+				"`id`":        {1, 5, 10, 30, 23, 56},
+				"`name` LIKE": {"dd%"},
+				"`status` >":  {0},
+			})
+
+			query.Sql(&args)
+
+			base.ReleaseArgs(&args)
+			query.Close()
+		}
+	})
+}
+
+func BenchmarkMysqlQuery(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		query := NewMysqlQuery()
+		args := base.AcquireArgs()
+
+		query.From("`user`").Where(map[string][]interface{}{
+			"`id`":        {1, 5, 10, 30, 23, 56},
+			"`name` LIKE": {"dd%"},
+			"`status` >":  {0},
+		})
+
+		query.Sql(&args)
+
+		base.ReleaseArgs(&args)
+		query.Close()
+	}
 }
