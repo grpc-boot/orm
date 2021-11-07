@@ -1,0 +1,23 @@
+db:
+  retryInterval: 60
+  masters:
+    - dsn: root:123456@tcp(127.0.0.1:3306)/dd?timeout=5s&readTimeout=6s
+      maxConnLifetime: 600
+      maxOpenConns: 50
+      maxIdleConns: 10
+
+    - dsn: root:123456@tcp(localhost:3307)/dd?timeout=5s&readTimeout=6s
+      maxConnLifetime: 600
+      maxOpenConns: 50
+      maxIdleConns: 10
+
+  slaves:
+    - dsn: root:123456@tcp(localhost:3306)/dd?timeout=5s&readTimeout=6s
+      maxConnLifetime: 600
+      maxOpenConns: 50
+      maxIdleConns: 10
+
+    - dsn: root:123456@tcp(localhost:3307)/dd?timeout=5s&readTimeout=6s
+      maxConnLifetime: 600
+      maxOpenConns: 50
+      maxIdleConns: 10

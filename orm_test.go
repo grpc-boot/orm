@@ -2,12 +2,45 @@ package orm
 
 // go test . -v
 // go test -bench=. -benchmem -benchtime=5s
+// brew services start mysql
 import (
+	"log"
 	"testing"
 	"time"
 
 	"github.com/grpc-boot/base"
 )
+
+var (
+	g Group
+)
+
+type User struct {
+	Id       int64  `borm:"id,primary"`
+	NickName string `borm:"nick_name"`
+	IsOn     uint8  `borm:"is_on,required"`
+}
+
+func (u User) TableName() string {
+	return `user`
+}
+
+func init() {
+	var err error
+	g, err = NewMysqlGroup(&GroupOption{
+		Masters: []PoolOption{
+			{
+				Dsn: ``,
+			},
+		},
+		Slaves:        []PoolOption{},
+		RetryInterval: 60,
+	})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+}
 
 func TestCondition_Sql(t *testing.T) {
 	cond := map[string][]interface{}{
@@ -115,16 +148,6 @@ func TestDeleteAll(t *testing.T) {
 	}))
 
 	t.Log(sql, args)
-}
-
-type User struct {
-	Id       int64  `borm:"id,primary"`
-	NickName string `borm:"nick_name"`
-	IsOn     uint8  `borm:"is_on,required"`
-}
-
-func (u User) TableName() string {
-	return `borm_user`
 }
 
 func TestInsertObjs(t *testing.T) {

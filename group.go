@@ -311,7 +311,7 @@ func (g *group) DeleteObj(obj interface{}) (result sql.Result, err error) {
 	args := base.AcquireArgs()
 	defer base.ReleaseArgs(&args)
 
-	sqlStr, err := SqlUpdateByObj(&args, obj)
+	sqlStr, err := SqlDeleteByObj(&args, obj)
 	if err != nil {
 		return nil, err
 	}
