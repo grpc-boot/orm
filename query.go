@@ -1,13 +1,10 @@
 package orm
 
 import (
+	"database/sql"
 	"strconv"
 	"strings"
 	"sync"
-)
-
-const (
-	inHolder = "?,"
 )
 
 var (
@@ -24,17 +21,20 @@ var (
 )
 
 type Query interface {
+	Db(g Group) Query
 	Select(columns ...string) Query
 	From(table string) Query
-	Where(where map[string][]interface{}) Query
-	AndWhere(where map[string][]interface{}) Query
-	OrWhere(where map[string][]interface{}) Query
+	Where(condition Condition) Query
+	AndWhere(condition Condition) Query
+	OrWhere(condition Condition) Query
 	Group(fields ...string) Query
 	Having(having string) Query
 	Order(orders ...string) Query
 	Offset(offset int64) Query
 	Limit(limit int64) Query
 	Sql(arguments *[]interface{}) (sql string)
+	One(useMaster bool) (rows *sql.Rows, err error)
+	All(useMaster bool) (rows *sql.Rows, err error)
 	Close()
 }
 
@@ -45,6 +45,7 @@ func NewMysqlQuery() Query {
 type mysqlQuery struct {
 	Query
 
+	g       Group
 	table   string
 	columns string
 	where   Where
@@ -56,6 +57,7 @@ type mysqlQuery struct {
 }
 
 func (mq *mysqlQuery) reset() Query {
+	mq.g = nil
 	mq.table = ""
 	mq.columns = defaultColumns
 	mq.offset = 0
@@ -70,6 +72,11 @@ func (mq *mysqlQuery) reset() Query {
 	return mq
 }
 
+func (mq *mysqlQuery) Db(g Group) Query {
+	mq.g = g
+	return mq
+}
+
 func (mq *mysqlQuery) Select(columns ...string) Query {
 	mq.columns = strings.Join(columns, ",")
 	return mq
@@ -80,24 +87,24 @@ func (mq *mysqlQuery) From(table string) Query {
 	return mq
 }
 
-func (mq *mysqlQuery) Where(where map[string][]interface{}) Query {
+func (mq *mysqlQuery) Where(condition Condition) Query {
 	if len(mq.where) == 0 {
-		mq.where = []Condition{andCondition(where)}
+		mq.where = Where{AndWhere(condition)}
 	} else {
-		mq.where = append(mq.where, andCondition(where))
+		mq.where = append(mq.where, AndWhere(condition))
 	}
 	return mq
 }
 
-func (mq *mysqlQuery) AndWhere(where map[string][]interface{}) Query {
-	return mq.Where(where)
+func (mq *mysqlQuery) AndWhere(condition Condition) Query {
+	return mq.Where(condition)
 }
 
-func (mq *mysqlQuery) OrWhere(where map[string][]interface{}) Query {
+func (mq *mysqlQuery) OrWhere(condition Condition) Query {
 	if len(mq.where) == 0 {
-		mq.where = []Condition{orCondition(where)}
+		mq.where = Where{OrWhere(condition)}
 	} else {
-		mq.where = append(mq.where, orCondition(where))
+		mq.where = append(mq.where, OrWhere(condition))
 	}
 	return mq
 }
@@ -134,7 +141,7 @@ func (mq *mysqlQuery) Close() {
 
 func (mq *mysqlQuery) Sql(arguments *[]interface{}) (sql string) {
 	var (
-		where     string
+		whereStr  string
 		sqlBuffer strings.Builder
 	)
 
@@ -144,8 +151,8 @@ func (mq *mysqlQuery) Sql(arguments *[]interface{}) (sql string) {
 	sqlBuffer.WriteString(mq.table)
 
 	if len(mq.where) > 0 {
-		where = mq.where.Sql(arguments)
-		sqlBuffer.WriteString(where)
+		whereStr = mq.where.Sql(arguments)
+		sqlBuffer.WriteString(whereStr)
 	}
 	sqlBuffer.WriteString(mq.group)
 	sqlBuffer.WriteString(mq.having)
@@ -160,4 +167,13 @@ func (mq *mysqlQuery) Sql(arguments *[]interface{}) (sql string) {
 	sqlBuffer.WriteString(",")
 	sqlBuffer.WriteString(strconv.FormatInt(mq.limit, 10))
 	return sqlBuffer.String()
+}
+
+func (mq *mysqlQuery) One(useMaster bool) (rows *sql.Rows, err error) {
+	mq.Limit(1)
+	return mq.g.Query(mq, useMaster)
+}
+
+func (mq *mysqlQuery) All(useMaster bool) (rows *sql.Rows, err error) {
+	return mq.g.Query(mq, useMaster)
 }

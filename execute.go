@@ -4,7 +4,7 @@ import (
 	"strings"
 )
 
-func Insert(args *[]interface{}, table string, rows ...map[string]interface{}) (sql string) {
+func SqlInsert(args *[]interface{}, table string, rows ...map[string]interface{}) (sql string) {
 	if len(rows) < 0 {
 		return ""
 	}
@@ -60,7 +60,11 @@ func Insert(args *[]interface{}, table string, rows ...map[string]interface{}) (
 	return sqlBuffer.String()
 }
 
-func UpdateAll(args *[]interface{}, table string, set map[string]interface{}, where Where) (sql string) {
+func SqlUpdate(args *[]interface{}, table string, set map[string]interface{}, condition Condition) (sql string) {
+	return SqlUpdateByWhere(args, table, set, Where{AndWhere(condition)})
+}
+
+func SqlUpdateByWhere(args *[]interface{}, table string, set map[string]interface{}, where Where) (sql string) {
 	var (
 		sqlBuffer strings.Builder
 
@@ -89,7 +93,11 @@ func UpdateAll(args *[]interface{}, table string, set map[string]interface{}, wh
 	return sqlBuffer.String()
 }
 
-func DeleteAll(args *[]interface{}, table string, where Where) (sql string) {
+func SqlDelete(args *[]interface{}, table string, condition Condition) (sql string) {
+	return SqlDeleteByWhere(args, table, Where{AndWhere(condition)})
+}
+
+func SqlDeleteByWhere(args *[]interface{}, table string, where Where) (sql string) {
 	var (
 		sqlBuffer strings.Builder
 	)

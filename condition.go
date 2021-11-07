@@ -14,15 +14,15 @@ type Condition interface {
 	Sql(args *[]interface{}) (sql string)
 }
 
-func orCondition(fields map[string][]interface{}) Condition {
-	return &condition{
+func OrCondition(fields map[string][]interface{}) Condition {
+	return condition{
 		opt:    Or,
 		fields: fields,
 	}
 }
 
-func andCondition(fields map[string][]interface{}) Condition {
-	return &condition{
+func AndCondition(fields map[string][]interface{}) Condition {
+	return condition{
 		opt:    And,
 		fields: fields,
 	}
@@ -35,11 +35,11 @@ type condition struct {
 	fields map[string][]interface{}
 }
 
-func (c *condition) Opt() (opt string) {
+func (c condition) Opt() (opt string) {
 	return c.opt
 }
 
-func (c *condition) Sql(args *[]interface{}) (sql string) {
+func (c condition) Sql(args *[]interface{}) (sql string) {
 	if len(c.fields) < 1 {
 		return
 	}
@@ -47,7 +47,6 @@ func (c *condition) Sql(args *[]interface{}) (sql string) {
 	var (
 		buf          strings.Builder
 		operator     string
-		position     int
 		hasCondition bool
 	)
 
@@ -56,53 +55,48 @@ func (c *condition) Sql(args *[]interface{}) (sql string) {
 			continue
 		}
 
-		operator = "="
-		position = 0
-		for index, r := range field {
-			if r == ' ' {
-				position = index
-				break
-			}
-		}
-
-		if position > 0 {
-			operator = strings.ToUpper(field[position+1:])
-			field = field[:position]
-		}
-
-		if len(value) > 1 && operator != "BETWEEN" {
-			operator = "IN"
+		if len(value) > 1 {
+			operator = strings.ToUpper(value[0].(string))
+			*args = append(*args, value[1:]...)
+		} else {
+			operator = `=`
+			*args = append(*args, value...)
 		}
 
 		if !hasCondition {
 			hasCondition = true
-			buf.WriteString("(")
+			buf.WriteByte('(')
 		} else {
-			buf.WriteString(" AND ")
+			buf.WriteByte(' ')
+			buf.WriteString(c.opt)
+			buf.WriteByte(' ')
 		}
+
 		buf.WriteString(field)
 
 		switch operator {
 		case "IN":
 			buf.WriteString(" IN(")
-			buf.WriteString(strings.Repeat(inHolder, len(value))[:2*len(value)-1])
-			buf.WriteString(")")
+			for index := 1; index < len(value); index++ {
+				if index > 1 {
+					buf.WriteByte(',')
+				}
+				buf.WriteByte('?')
+			}
+			buf.WriteByte(')')
 		case "BETWEEN":
 			buf.WriteString(" BETWEEN ? AND ?")
-		case "LIKE":
-			buf.WriteString(" LIKE ?")
 		default:
-			buf.WriteString(" ")
+			buf.WriteByte(' ')
 			buf.WriteString(operator)
 			buf.WriteString(" ?")
 		}
-		*args = append(*args, value...)
 	}
 
 	if !hasCondition {
 		return
 	}
 
-	buf.WriteString(`)`)
+	buf.WriteByte(')')
 	return buf.String()
 }

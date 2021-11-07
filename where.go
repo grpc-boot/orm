@@ -2,15 +2,34 @@ package orm
 
 import "strings"
 
-type Where []Condition
+type WhereCondition struct {
+	opt       string
+	condition Condition
+}
 
-func (w *Where) Sql(args *[]interface{}) (sql string) {
+type Where []WhereCondition
+
+func AndWhere(condition Condition) WhereCondition {
+	return WhereCondition{
+		opt:       And,
+		condition: condition,
+	}
+}
+
+func OrWhere(condition Condition) WhereCondition {
+	return WhereCondition{
+		opt:       Or,
+		condition: condition,
+	}
+}
+
+func (w Where) Sql(args *[]interface{}) (sql string) {
 	var (
 		buf strings.Builder
 	)
 
-	for index, where := range *w {
-		sqlStr := where.Sql(args)
+	for index, wc := range w {
+		sqlStr := wc.condition.Sql(args)
 		if sqlStr == "" {
 			continue
 		}
@@ -19,7 +38,7 @@ func (w *Where) Sql(args *[]interface{}) (sql string) {
 			buf.WriteString(` WHERE `)
 		} else {
 			buf.WriteByte(' ')
-			buf.WriteString(where.Opt())
+			buf.WriteString(wc.opt)
 			buf.WriteByte(' ')
 		}
 		buf.WriteString(sqlStr)
