@@ -26,27 +26,20 @@ type GroupOption struct {
 }
 
 type Group interface {
-	GetMaster() (index int, mPoll Pool, badTime int64)
-	GetSlave() (index int, mPoll Pool, badTime int64)
-	GetBadPool(isMaster bool) (list []int)
+	BadPool(isMaster bool) (list []int)
+	Query(useMaster bool, sqlStr string, args ...interface{}) (rows *sql.Rows, err error)
+	Exec(sqlStr string, args ...interface{}) (result sql.Result, err error)
 	InsertObj(obj interface{}) (result sql.Result, err error)
 	DeleteObj(obj interface{}) (result sql.Result, err error)
 	UpdateObj(obj interface{}) (result sql.Result, err error)
-	Query(query Query, useMaster bool) (rows *sql.Rows, err error)
+	Find(query Query, useMaster bool) (rows *sql.Rows, err error)
+	FindOne(condtion Condition, useMaster bool) (row map[string]string, err error)
+	FindOneObj(condtion Condition, useMaster bool, obj interface{}) (err error)
+	Insert(table string, rows ...map[string]interface{}) (result sql.Result, err error)
+	DeleteAll(table string, condition Condition) (result sql.Result, err error)
+	UpdateAll(table string, set map[string]interface{}, condition Condition) (result sql.Result, err error)
 	Begin() (*sql.Tx, error)
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
-}
-
-func isLostError(err error) bool {
-	if err == driver.ErrBadConn {
-		return true
-	}
-
-	if errVal, ok := err.(*net.OpError); ok {
-		log.Printf("exec sql error:%s", errVal.Error())
-		return true
-	}
-	return false
 }
 
 type group struct {
@@ -102,25 +95,45 @@ func NewMysqlGroup(groupOption *GroupOption) (Group, error) {
 	return g, nil
 }
 
-func (g *group) downMaster(index int) {
-	if index >= g.masterLen {
-		return
+func (g *group) isBadConnError(index int, badTime int64, err error, master bool) (isBadConn bool) {
+	if err == nil {
+		if badTime > 0 {
+			g.up(index, master)
+		}
+		return false
 	}
 
-	if g.masterBadPool[index].Load() > 0 {
-		return
+	if err == driver.ErrBadConn {
+		g.down(index, master)
+		return true
 	}
-	g.masterBadPool[index].CAS(0, time.Now().Unix())
+
+	if errVal, ok := err.(*net.OpError); ok {
+		log.Printf("exec sql error:%s", errVal.Error())
+		g.down(index, master)
+		return true
+	}
+
+	if badTime > 0 {
+		g.up(index, master)
+	}
+
+	return false
 }
 
-func (g *group) upMaster(index int) {
-	if index >= g.masterLen {
+func (g *group) down(index int, isMaster bool) {
+	if isMaster {
+		if index >= g.masterLen {
+			return
+		}
+
+		if g.masterBadPool[index].Load() > 0 {
+			return
+		}
+		g.masterBadPool[index].CAS(0, time.Now().Unix())
 		return
 	}
-	g.masterBadPool[index].Store(0)
-}
 
-func (g *group) downSlave(index int) {
 	if index >= g.slaveLen {
 		return
 	}
@@ -131,34 +144,22 @@ func (g *group) downSlave(index int) {
 	g.slaveBadPool[index].CAS(0, time.Now().Unix())
 }
 
-func (g *group) upSlave(index int) {
+func (g *group) up(index int, isMaster bool) {
+	if isMaster {
+		if index >= g.masterLen {
+			return
+		}
+		g.masterBadPool[index].Store(0)
+		return
+	}
+
 	if index >= g.slaveLen {
 		return
 	}
 	g.slaveBadPool[index].Store(0)
 }
 
-func (g *group) GetBadPool(isMaster bool) (list []int) {
-	if isMaster {
-		list = make([]int, 0, g.masterLen)
-		for index := 0; index < g.masterLen; index++ {
-			if g.masterBadPool[index].Load() > 0 {
-				list = append(list, index)
-			}
-		}
-		return
-	}
-
-	list = make([]int, 0, g.slaveLen)
-	for index := 0; index < g.slaveLen; index++ {
-		if g.slaveBadPool[index].Load() > 0 {
-			list = append(list, index)
-		}
-	}
-	return
-}
-
-func (g *group) GetMaster() (index int, mPoll Pool, badTime int64) {
+func (g *group) getMaster() (index int, mPoll Pool, badTime int64) {
 	if g.masterLen == 1 {
 		return 0, g.masters[0], g.masterBadPool[0].Load()
 	}
@@ -179,7 +180,7 @@ func (g *group) GetMaster() (index int, mPoll Pool, badTime int64) {
 	return 0, g.masters[0], g.masterBadPool[0].Load()
 }
 
-func (g *group) GetSlave() (index int, mPoll Pool, badTime int64) {
+func (g *group) getSlave() (index int, mPoll Pool, badTime int64) {
 	if g.slaveLen == 1 {
 		return 0, g.slaves[0], g.slaveBadPool[0].Load()
 	}
@@ -200,51 +201,29 @@ func (g *group) GetSlave() (index int, mPoll Pool, badTime int64) {
 	return 0, g.slaves[0], g.slaveBadPool[0].Load()
 }
 
-func (g *group) Exec(handler func(mPool Pool) (sql.Result, error)) (result sql.Result, err error) {
+func (g *group) exec(handler func(mPool Pool) (sql.Result, error)) (result sql.Result, err error) {
 	for start := 0; start < g.masterLen; start++ {
-		index, pool, badTime := g.GetMaster()
+		index, pool, badTime := g.getMaster()
 		result, err = handler(pool)
-		if err == nil {
-			if badTime > 0 {
-				g.upMaster(index)
-			}
-
-			return result, nil
-		}
-
-		if isLostError(err) {
-			g.downMaster(index)
+		if g.isBadConnError(index, badTime, err, true) {
 			continue
 		}
-
-		if badTime > 0 {
-			g.upMaster(index)
-		}
-
 		return result, err
 	}
 	return nil, ErrNoMasterConn
 }
 
-func (g *group) QuerySlave(handler func(mPool Pool) (*sql.Rows, error)) (rows *sql.Rows, err error) {
+func (g *group) query(handler func(mPool Pool) (*sql.Rows, error), useMaster bool) (rows *sql.Rows, err error) {
+	var funcPool = g.getSlave
+	if useMaster {
+		funcPool = g.getMaster
+	}
+
 	for start := 0; start < g.slaveLen; start++ {
-		index, pool, badTime := g.GetSlave()
+		index, pool, badTime := funcPool()
 		rows, err = handler(pool)
-		if err == nil {
-			if badTime > 0 {
-				g.upSlave(index)
-			}
-
-			return rows, err
-		}
-
-		if isLostError(err) {
-			g.downSlave(index)
+		if g.isBadConnError(index, badTime, err, useMaster) {
 			continue
-		}
-
-		if badTime > 0 {
-			g.upSlave(index)
 		}
 		return rows, err
 	}
@@ -252,44 +231,35 @@ func (g *group) QuerySlave(handler func(mPool Pool) (*sql.Rows, error)) (rows *s
 	return nil, ErrNoSlaveConn
 }
 
-func (g *group) QueryMaster(handler func(mPool Pool) (*sql.Rows, error)) (rows *sql.Rows, err error) {
-	for start := 0; start < g.slaveLen; start++ {
-		index, pool, badTime := g.GetMaster()
-		rows, err = handler(pool)
-		if err == nil {
-			if badTime > 0 {
-				g.upMaster(index)
+func (g *group) BadPool(isMaster bool) (list []int) {
+	if isMaster {
+		list = make([]int, 0, g.masterLen)
+		for index := 0; index < g.masterLen; index++ {
+			if g.masterBadPool[index].Load() > 0 {
+				list = append(list, index)
 			}
-
-			return rows, err
 		}
-
-		if isLostError(err) {
-			g.downMaster(index)
-			continue
-		}
-
-		if badTime > 0 {
-			g.upMaster(index)
-		}
-		return rows, err
+		return
 	}
 
-	return nil, ErrNoMasterConn
+	list = make([]int, 0, g.slaveLen)
+	for index := 0; index < g.slaveLen; index++ {
+		if g.slaveBadPool[index].Load() > 0 {
+			list = append(list, index)
+		}
+	}
+	return
 }
 
-func (g *group) Query(query Query, useMaster bool) (rows *sql.Rows, err error) {
-	args := base.AcquireArgs()
-	defer base.ReleaseArgs(&args)
+func (g *group) Query(useMaster bool, sqlStr string, args ...interface{}) (rows *sql.Rows, err error) {
+	return g.query(func(mPool Pool) (*sql.Rows, error) {
+		return mPool.Query(sqlStr, args...)
+	}, useMaster)
+}
 
-	if useMaster {
-		return g.QueryMaster(func(mPool Pool) (*sql.Rows, error) {
-			return mPool.Query(query.Sql(&args), args...)
-		})
-	}
-
-	return g.QuerySlave(func(mPool Pool) (*sql.Rows, error) {
-		return mPool.Query(query.Sql(&args), args...)
+func (g *group) Exec(sqlStr string, args ...interface{}) (result sql.Result, err error) {
+	return g.exec(func(mPool Pool) (sql.Result, error) {
+		return mPool.Execute(sqlStr, args...)
 	})
 }
 
@@ -302,7 +272,7 @@ func (g *group) InsertObj(obj interface{}) (result sql.Result, err error) {
 		return nil, err
 	}
 
-	return g.Exec(func(mPool Pool) (sql.Result, error) {
+	return g.exec(func(mPool Pool) (sql.Result, error) {
 		return mPool.Execute(sqlStr, args...)
 	})
 }
@@ -316,7 +286,7 @@ func (g *group) DeleteObj(obj interface{}) (result sql.Result, err error) {
 		return nil, err
 	}
 
-	return g.Exec(func(mPool Pool) (sql.Result, error) {
+	return g.exec(func(mPool Pool) (sql.Result, error) {
 		return mPool.Execute(sqlStr, args...)
 	})
 }
@@ -330,32 +300,101 @@ func (g *group) UpdateObj(obj interface{}) (result sql.Result, err error) {
 		return nil, err
 	}
 
-	return g.Exec(func(mPool Pool) (sql.Result, error) {
+	return g.exec(func(mPool Pool) (sql.Result, error) {
 		return mPool.Execute(sqlStr, args...)
 	})
 }
 
+func (g *group) Find(query Query, useMaster bool) (rows *sql.Rows, err error) {
+	args := base.AcquireArgs()
+	defer base.ReleaseArgs(&args)
+
+	return g.query(func(mPool Pool) (*sql.Rows, error) {
+		return mPool.Query(query.Sql(&args), args...)
+	}, useMaster)
+}
+
+func (g *group) FindOne(condtion Condition, useMaster bool) (row map[string]string, err error) {
+	var (
+		args  = base.AcquireArgs()
+		query = NewMysqlQuery().Where(condtion).Limit(1)
+		rows  *sql.Rows
+	)
+
+	defer func() {
+		base.ReleaseArgs(&args)
+		query.Close()
+	}()
+
+	rows, err = g.query(func(mPool Pool) (*sql.Rows, error) {
+		return mPool.Query(query.Sql(&args), args...)
+	}, useMaster)
+
+	if err != nil {
+		return
+	}
+
+	tRows, err := ToMap(rows)
+	if err != nil {
+		return
+	}
+
+	if len(tRows) > 0 {
+		return tRows[0], nil
+	}
+	return
+}
+
+func (g *group) FindOneObj(condtion Condition, useMaster bool, obj interface{}) (err error) {
+	var (
+		args  = base.AcquireArgs()
+		query = NewMysqlQuery().Where(condtion).Limit(1)
+		rows  *sql.Rows
+	)
+
+	defer func() {
+		base.ReleaseArgs(&args)
+		query.Close()
+	}()
+
+	rows, err = g.query(func(mPool Pool) (*sql.Rows, error) {
+		return mPool.Query(query.Sql(&args), args...)
+	}, useMaster)
+
+	if err != nil {
+		return
+	}
+	return ToObj(rows, obj)
+}
+
+func (g *group) Insert(table string, rows ...map[string]interface{}) (result sql.Result, err error) {
+	args := base.AcquireArgs()
+	defer base.ReleaseArgs(&args)
+
+	return g.Exec(SqlInsert(&args, table, rows...), args...)
+}
+
+func (g *group) DeleteAll(table string, condition Condition) (result sql.Result, err error) {
+	args := base.AcquireArgs()
+	defer base.ReleaseArgs(&args)
+
+	return g.Exec(SqlDelete(&args, table, condition), args...)
+}
+
+func (g *group) UpdateAll(table string, set map[string]interface{}, condition Condition) (result sql.Result, err error) {
+	args := base.AcquireArgs()
+	defer base.ReleaseArgs(&args)
+
+	return g.Exec(SqlUpdate(&args, table, set, condition), args...)
+}
+
 func (g *group) Begin() (*sql.Tx, error) {
 	for start := 0; start < g.masterLen; start++ {
-		index, pool, badTime := g.GetMaster()
+		index, pool, badTime := g.getMaster()
 		tx, err := pool.Begin()
-		if err == nil {
-			if badTime > 0 {
-				g.upMaster(index)
-			}
-
-			return tx, nil
-		}
-
-		if isLostError(err) {
-			g.downMaster(index)
+		if g.isBadConnError(index, badTime, err, true) {
 			continue
 		}
-
-		if badTime > 0 {
-			g.upMaster(index)
-		}
-
 		return tx, err
 	}
 	return nil, ErrNoMasterConn
@@ -363,25 +402,11 @@ func (g *group) Begin() (*sql.Tx, error) {
 
 func (g *group) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
 	for start := 0; start < g.masterLen; start++ {
-		index, pool, badTime := g.GetMaster()
+		index, pool, badTime := g.getMaster()
 		tx, err := pool.BeginTx(ctx, opts)
-		if err == nil {
-			if badTime > 0 {
-				g.upMaster(index)
-			}
-
-			return tx, nil
-		}
-
-		if isLostError(err) {
-			g.downMaster(index)
+		if g.isBadConnError(index, badTime, err, true) {
 			continue
 		}
-
-		if badTime > 0 {
-			g.upMaster(index)
-		}
-
 		return tx, err
 	}
 	return nil, ErrNoMasterConn

@@ -97,12 +97,12 @@ func deleteObj() {
 }
 
 func query() {
-	q := orm.NewMysqlQuery().Db(group)
+	q := orm.NewMysqlQuery()
 	q.From("`user`").Where(orm.AndCondition(map[string][]interface{}{
 		"`created_at`": {">", 0},
-	}))
+	})).Limit(1)
 
-	rows, err := q.One(false)
+	rows, err := group.Find(q, false)
 	if err != nil {
 		base.RedFatal("query one err:%s", err.Error())
 	}
@@ -115,7 +115,7 @@ func query() {
 
 	base.Green("%v", user)
 
-	rows, err = q.Limit(10).All(true)
+	rows, err = group.Find(q.Limit(10), false)
 	if err != nil {
 		base.RedFatal("query all err:%s", err.Error())
 	}

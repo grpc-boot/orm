@@ -1,7 +1,6 @@
 package orm
 
 import (
-	"database/sql"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,7 +20,6 @@ var (
 )
 
 type Query interface {
-	Db(g Group) Query
 	Select(columns ...string) Query
 	From(table string) Query
 	Where(condition Condition) Query
@@ -33,8 +31,6 @@ type Query interface {
 	Offset(offset int64) Query
 	Limit(limit int64) Query
 	Sql(arguments *[]interface{}) (sql string)
-	One(useMaster bool) (rows *sql.Rows, err error)
-	All(useMaster bool) (rows *sql.Rows, err error)
 	Close()
 }
 
@@ -69,11 +65,6 @@ func (mq *mysqlQuery) reset() Query {
 	if len(mq.where) > 0 {
 		mq.where = mq.where[:0]
 	}
-	return mq
-}
-
-func (mq *mysqlQuery) Db(g Group) Query {
-	mq.g = g
 	return mq
 }
 
@@ -167,13 +158,4 @@ func (mq *mysqlQuery) Sql(arguments *[]interface{}) (sql string) {
 	sqlBuffer.WriteString(",")
 	sqlBuffer.WriteString(strconv.FormatInt(mq.limit, 10))
 	return sqlBuffer.String()
-}
-
-func (mq *mysqlQuery) One(useMaster bool) (rows *sql.Rows, err error) {
-	mq.Limit(1)
-	return mq.g.Query(mq, useMaster)
-}
-
-func (mq *mysqlQuery) All(useMaster bool) (rows *sql.Rows, err error) {
-	return mq.g.Query(mq, useMaster)
 }
