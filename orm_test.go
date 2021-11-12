@@ -17,7 +17,7 @@ var (
 
 type User struct {
 	Id       int64  `borm:"id,primary"`
-	NickName string `borm:"nick_name"`
+	NickName string `borm:"nickname"`
 	IsOn     uint8  `borm:"is_on,required"`
 }
 
@@ -160,7 +160,7 @@ func TestInsertObjs(t *testing.T) {
 	t.Log(sql, args)
 
 	args = args[:0]
-	sql, err = SqlInsertObjs(&args, []User{
+	sql, err = SqlInsertObjs(&args, []*User{
 		{
 			NickName: "1sdf",
 		},
@@ -178,7 +178,7 @@ func TestInsertObjs(t *testing.T) {
 func TestUpdateByObj(t *testing.T) {
 	args := base.AcquireArgs()
 	defer base.ReleaseArgs(&args)
-	sql, err := SqlUpdateByObj(&args, User{
+	sql, err := SqlUpdateByObj(&args, &User{
 		Id:       12,
 		NickName: "ban user",
 		IsOn:     0,
@@ -194,7 +194,7 @@ func TestUpdateByObj(t *testing.T) {
 func TestDeleteByObj(t *testing.T) {
 	args := base.AcquireArgs()
 	defer base.ReleaseArgs(&args)
-	sql, err := SqlDeleteByObj(&args, User{
+	sql, err := SqlDeleteByObj(&args, &User{
 		Id: 12,
 	})
 
@@ -248,7 +248,7 @@ func BenchmarkInsertObjs(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		args := base.AcquireArgs()
 
-		_, _ = SqlInsertObjs(&args, []User{
+		_, _ = SqlInsertObjs(&args, []*User{
 			{
 				NickName: "sdfasdf",
 			},
@@ -270,7 +270,7 @@ func BenchmarkInsertObjs(b *testing.B) {
 func BenchmarkDeleteByObj(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		args := base.AcquireArgs()
-		_, _ = SqlDeleteByObj(&args, User{
+		_, _ = SqlDeleteByObj(&args, &User{
 			Id: 14,
 		})
 
