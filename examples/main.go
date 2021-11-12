@@ -1,7 +1,9 @@
 package main
 
 import (
-	"os"
+	"fmt"
+	"math/rand"
+	"strconv"
 	"time"
 
 	"github.com/grpc-boot/base"
@@ -14,6 +16,8 @@ CREATE TABLE `user` (
 `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT '用户ID',
 `nickname` varchar(32) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT '' COMMENT '昵称',
 `created_at` bigint unsigned DEFAULT NULL COMMENT '创建时间',
+`updated_at` bigint unsigned DEFAULT '0' COMMENT '更新时间',
+`is_on` tinyint unsigned DEFAULT '0' COMMENT '是否启用(0未启用，1启用)',
 PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 */
@@ -27,13 +31,14 @@ var (
 )
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
+
 	conf := &Config{}
 
 	err := base.YamlDecodeFile("app.yml", conf)
 
 	if err != nil {
-		base.Red("init group err:%s", err.Error())
-		os.Exit(1)
+		base.RedFatal("init group err:%s", err.Error())
 	}
 
 	base.Green("use config:%v", conf)
@@ -43,86 +48,186 @@ func main() {
 		base.RedFatal("init group err:%s", err.Error())
 	}
 
-	insert()
+	id := insert()
 
-	update()
+	lastInsertUser := findOneObj(id)
 
-	deleteObj()
+	base.Green("lastInsert User: %v", lastInsertUser)
+
+	update(lastInsertUser)
+
+	find()
+
+	deleteObj(lastInsertUser)
+
+	groupSql()
 
 	query()
+
+	//deleteAll()
 }
 
-func insert() {
+func insert() int64 {
 	current := time.Now()
-	result, err := group.InsertObj(model.User{
-		NickName:  current.Format(`2006-01-02 15:04:05`),
-		CreatedAt: current.Unix(),
+
+	r, err := group.Insert(`user`, map[string]interface{}{
+		"nickname":   fmt.Sprintf("m_%s", current.Format(`2006-01-02 15:04:05`)),
+		"created_at": current.Unix(),
+	})
+
+	if err != nil {
+		base.RedFatal("insert err:%s", err.Error())
+	}
+
+	id, err := r.LastInsertId()
+	if err != nil {
+		base.RedFatal("get insertId err:%s", err.Error())
+	}
+	base.Green("insert id:%d", id)
+
+	result, err := group.InsertObj(&model.User{
+		NickName: current.Format(`2006-01-02 15:04:05`),
 	})
 
 	if err != nil {
 		base.RedFatal("insert obj err:%s", err.Error())
 	}
 
-	id, err := result.LastInsertId()
+	id, err = result.LastInsertId()
 	if err != nil {
 		base.RedFatal("get insertId err:%s", err.Error())
 	}
 
 	base.Green("insert id:%d", id)
+
+	return id
 }
 
-func update() {
-	result, err := group.UpdateObj(model.User{
-		Id:        1,
-		NickName:  "update nickName",
-		CreatedAt: time.Now().Unix(),
-	})
+func findOneObj(id int64) *model.User {
+	var (
+		user      = &model.User{}
+		condition = orm.AndCondition(map[string][]interface{}{
+			"id": {id},
+		})
+	)
+
+	u, err := group.FindOne(user.TableName(), condition, false)
+	if err != nil {
+		base.RedFatal("find one err:%s", err.Error())
+	}
+	base.Green("find one user:%v", u)
+
+	err = group.FindOneObj(condition, true, user)
 
 	if err != nil {
-		base.RedFatal("update err:%s", err.Error())
+		base.RedFatal("find one obj err:%s", err.Error())
+	}
+	return user
+}
+
+func update(user *model.User) {
+	user.NickName = "update_" + strconv.FormatInt(rand.Int63(), 10)
+	user.IsOn = 1
+
+	result, err := group.UpdateAll(user.TableName(), map[string]interface{}{
+		"nickname": user.NickName,
+	}, orm.AndCondition(map[string][]interface{}{
+		"id": {user.Id},
+	}))
+
+	if err != nil {
+		base.RedFatal("update all err:%s", err.Error())
 	}
 
 	rows, _ := result.RowsAffected()
-	base.Green("update rows %d", rows)
+	base.Green("update [%d] affected rows %d", user.Id, rows)
+
+	result, err = group.UpdateObj(user)
+
+	if err != nil {
+		base.RedFatal("update [%d] err:%s", user.Id, err.Error())
+	}
+
+	rows, _ = result.RowsAffected()
+	base.Green("update [%d] affected rows %d", user.Id, rows)
+
+	base.Green("after update user:%v", user)
 }
 
-func deleteObj() {
-	result, err := group.DeleteObj(model.User{Id: 1})
+func deleteObj(user *model.User) {
+	result, err := group.DeleteObj(user)
 	if err != nil {
 		base.RedFatal("delete err:%s", err.Error())
 	}
 
 	rows, _ := result.RowsAffected()
-	base.Green("delete rows %d", rows)
+	base.Green("delete [%d] rows %d", user.Id, rows)
+}
+
+func find() {
+	q := orm.NewMysqlQuery()
+	defer q.Close()
+
+	user := &model.User{}
+	q.From(user.TableName())
+
+	userList, err := group.FindAll(q, user, false)
+	if err != nil {
+		base.RedFatal("find err:%s", err.Error())
+	}
+
+	if uList, ok := userList.([]interface{}); ok {
+		for _, u := range uList {
+			base.Green("user List:%v", u)
+		}
+	}
+}
+
+func groupSql() {
+	users, err := group.Query(true, `SELECT * FROM user LIMIT 10`)
+	if err != nil {
+		base.RedFatal("sql query err:%s", err.Error())
+	}
+
+	base.Green("sql query:%v", users)
+
+	r, err := group.Exec(`UPDATE user SET updated_at= 1 WHERE is_on>0`)
+	if err != nil {
+		base.RedFatal("sql exec err:%s", err.Error())
+	}
+
+	rows, err := r.RowsAffected()
+	if err != nil {
+		base.RedFatal("get rows affected err:%s", err.Error())
+	}
+	base.Green("rows affected :%d", rows)
 }
 
 func query() {
 	q := orm.NewMysqlQuery()
-	q.From("`user`").Where(orm.AndCondition(map[string][]interface{}{
-		"`created_at`": {">", 0},
-	})).Limit(1)
+	defer q.Close()
+
+	q.Select("id", "is_on").From(`user`).Order("`id` DESC").Offset(1).Limit(10)
 
 	rows, err := group.Find(q, false)
 	if err != nil {
-		base.RedFatal("query one err:%s", err.Error())
+		base.RedFatal("query err:%s", err.Error())
 	}
 
-	user := &model.User{}
-	err = orm.ToObj(rows, user)
+	base.Green("query find: %v", rows)
+}
+
+func deleteAll() {
+	r, err := group.DeleteAll(`user`, orm.AndCondition(map[string][]interface{}{
+		"id": {">", 0},
+	}))
 	if err != nil {
-		base.RedFatal("query one err:%s", err.Error())
+		base.RedFatal("delete all err:%s", err.Error())
 	}
 
-	base.Green("%v", user)
-
-	rows, err = group.Find(q.Limit(10), false)
+	rows, err := r.RowsAffected()
 	if err != nil {
-		base.RedFatal("query all err:%s", err.Error())
+		base.RedFatal("get rows affected err:%s", err.Error())
 	}
-
-	userList, err := orm.ToMap(rows)
-	if err != nil {
-		base.RedFatal("all to map err:%s", err.Error())
-	}
-	base.Green("%v", userList)
+	base.Green("rows affected :%d", rows)
 }

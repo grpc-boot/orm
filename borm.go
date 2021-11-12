@@ -13,23 +13,53 @@ const (
 )
 
 const (
-	tableMethod = `TableName`
+	tableMethod  = `tableName`
+	beforeSave   = `BeforeSave`
+	beforeUpdate = `BeforeUpdate`
+	beforeCreate = `BeforeCreate`
 )
 
 var (
-	ErrInvalidRowsTypes     = errors.New(`only struct or []struct types are supported`)
+	ErrInvalidRowsTypes     = errors.New(`only *struct or []*struct types are supported`)
 	ErrNotFoundField        = errors.New(`failed to match the field from the struct to the database. Please configure the borm tag correctly`)
 	ErrNotFoundPrimaryField = errors.New(`failed to found primary field. Please configure the primary on borm tag correctly`)
 	ErrInvalidTypes         = errors.New(`only *struct types are supported`)
 	ErrInvalidFieldTypes    = errors.New(`only bool(1 is true, other is false),string、float64、float32、int、uint、int8、uint8、int16、uint16、int32、uint32、int64 and uint64 types are supported`)
 )
 
-func TableName(value reflect.Value) (tableName string) {
+func tableName(value reflect.Value) (tableName string) {
 	v := value.MethodByName(tableMethod)
 	if v.Kind() == reflect.Func {
 		return v.Call(nil)[0].String()
 	}
 	return strings.ToLower(value.Type().Name())
+}
+
+func SqlFindOneObj(args *[]interface{}, condition Condition, obj interface{}) (sql string, err error) {
+	var (
+		value = reflect.ValueOf(obj)
+	)
+
+	if value.Kind() != reflect.Ptr {
+		return "", ErrInvalidTypes
+	}
+
+	value = value.Elem()
+
+	if value.Kind() != reflect.Struct {
+		return "", ErrInvalidTypes
+	}
+
+	var (
+		sqlBuffer strings.Builder
+	)
+
+	sqlBuffer.WriteString("SELECT * FROM `")
+	sqlBuffer.WriteString(tableName(value))
+	sqlBuffer.WriteByte('`')
+	sqlBuffer.WriteString(Where{AndWhere(condition)}.Sql(args))
+	sqlBuffer.WriteString(` LIMIT 1`)
+	return sqlBuffer.String(), nil
 }
 
 func SqlInsertObjs(args *[]interface{}, rows interface{}) (sql string, err error) {
@@ -38,19 +68,38 @@ func SqlInsertObjs(args *[]interface{}, rows interface{}) (sql string, err error
 		values []reflect.Value
 	)
 
-	//指针类型转换
-	if vRows.Kind() == reflect.Ptr {
-		vRows = vRows.Elem()
-	}
-
 	switch vRows.Kind() {
 	case reflect.Slice:
 		values = make([]reflect.Value, 0, vRows.Len())
 		for i := 0; i < vRows.Len(); i++ {
-			values = append(values, vRows.Index(i))
+			value := vRows.Index(i)
+
+			if value.Kind() != reflect.Ptr || value.Elem().Kind() != reflect.Struct {
+				return "", ErrInvalidRowsTypes
+			}
+
+			if bs := value.MethodByName(beforeSave); bs.Kind() == reflect.Func {
+				bs.Call(nil)
+			}
+
+			if bc := value.MethodByName(beforeCreate); bc.Kind() == reflect.Func {
+				bc.Call(nil)
+			}
+			values = append(values, value.Elem())
 		}
-	case reflect.Struct:
-		values = []reflect.Value{vRows}
+	case reflect.Ptr:
+		if vRows.Elem().Kind() != reflect.Struct {
+			return "", ErrInvalidRowsTypes
+		}
+
+		if bs := vRows.MethodByName(beforeSave); bs.Kind() == reflect.Func {
+			bs.Call(nil)
+		}
+
+		if bc := vRows.MethodByName(beforeCreate); bc.Kind() == reflect.Func {
+			bc.Call(nil)
+		}
+		values = []reflect.Value{vRows.Elem()}
 	default:
 		return "", ErrInvalidRowsTypes
 	}
@@ -100,7 +149,7 @@ func SqlInsertObjs(args *[]interface{}, rows interface{}) (sql string, err error
 			v = append(v, '(')
 			sqlBuffer.WriteString("INSERT INTO ")
 			sqlBuffer.WriteByte('`')
-			sqlBuffer.WriteString(TableName(value))
+			sqlBuffer.WriteString(tableName(value))
 			sqlBuffer.WriteByte('`')
 			sqlBuffer.WriteByte('(')
 		}
@@ -142,9 +191,11 @@ func SqlDeleteByObj(args *[]interface{}, obj interface{}) (sqlStr string, err er
 		value     = reflect.ValueOf(obj)
 	)
 
-	if value.Kind() == reflect.Ptr {
-		value = value.Elem()
+	if value.Kind() != reflect.Ptr {
+		return "", ErrInvalidTypes
 	}
+
+	value = value.Elem()
 
 	if value.Kind() != reflect.Struct {
 		return "", ErrInvalidTypes
@@ -189,7 +240,7 @@ func SqlDeleteByObj(args *[]interface{}, obj interface{}) (sqlStr string, err er
 
 	sqlBuffer.WriteString("DELETE FROM ")
 	sqlBuffer.WriteByte('`')
-	sqlBuffer.WriteString(TableName(value))
+	sqlBuffer.WriteString(tableName(value))
 	sqlBuffer.WriteByte('`')
 	sqlBuffer.WriteString((Where{AndWhere(AndCondition(where))}).Sql(args))
 
@@ -203,10 +254,19 @@ func SqlUpdateByObj(args *[]interface{}, obj interface{}) (sqlStr string, err er
 		value = reflect.ValueOf(obj)
 	)
 
-	if value.Kind() == reflect.Ptr {
-		value = value.Elem()
+	if value.Kind() != reflect.Ptr {
+		return "", ErrInvalidTypes
 	}
 
+	if bs := value.MethodByName(beforeSave); bs.Kind() == reflect.Func {
+		bs.Call(nil)
+	}
+
+	if bc := value.MethodByName(beforeUpdate); bc.Kind() == reflect.Func {
+		bc.Call(nil)
+	}
+
+	value = value.Elem()
 	if value.Kind() != reflect.Struct {
 		return "", ErrInvalidTypes
 	}
@@ -258,7 +318,7 @@ func SqlUpdateByObj(args *[]interface{}, obj interface{}) (sqlStr string, err er
 			hasSetField = true
 			sqlBuffer.WriteString("UPDATE ")
 			sqlBuffer.WriteByte('`')
-			sqlBuffer.WriteString(TableName(value))
+			sqlBuffer.WriteString(tableName(value))
 			sqlBuffer.WriteByte('`')
 			sqlBuffer.WriteString(" SET ")
 		}

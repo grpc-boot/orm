@@ -27,14 +27,15 @@ type GroupOption struct {
 
 type Group interface {
 	BadPool(isMaster bool) (list []int)
-	Query(useMaster bool, sqlStr string, args ...interface{}) (rows *sql.Rows, err error)
+	Query(useMaster bool, sqlStr string, args ...interface{}) (rows []map[string]string, err error)
 	Exec(sqlStr string, args ...interface{}) (result sql.Result, err error)
 	InsertObj(obj interface{}) (result sql.Result, err error)
 	DeleteObj(obj interface{}) (result sql.Result, err error)
 	UpdateObj(obj interface{}) (result sql.Result, err error)
-	Find(query Query, useMaster bool) (rows *sql.Rows, err error)
-	FindOne(condtion Condition, useMaster bool) (row map[string]string, err error)
-	FindOneObj(condtion Condition, useMaster bool, obj interface{}) (err error)
+	Find(query Query, useMaster bool) (rows []map[string]string, err error)
+	FindAll(query Query, obj interface{}, useMaster bool) (objList interface{}, err error)
+	FindOne(table string, condition Condition, useMaster bool) (row map[string]string, err error)
+	FindOneObj(condition Condition, useMaster bool, obj interface{}) (err error)
 	Insert(table string, rows ...map[string]interface{}) (result sql.Result, err error)
 	DeleteAll(table string, condition Condition) (result sql.Result, err error)
 	UpdateAll(table string, set map[string]interface{}, condition Condition) (result sql.Result, err error)
@@ -251,10 +252,20 @@ func (g *group) BadPool(isMaster bool) (list []int) {
 	return
 }
 
-func (g *group) Query(useMaster bool, sqlStr string, args ...interface{}) (rows *sql.Rows, err error) {
-	return g.query(func(mPool Pool) (*sql.Rows, error) {
+func (g *group) Query(useMaster bool, sqlStr string, args ...interface{}) (rows []map[string]string, err error) {
+	var (
+		sqlRows *sql.Rows
+	)
+
+	sqlRows, err = g.query(func(mPool Pool) (*sql.Rows, error) {
 		return mPool.Query(sqlStr, args...)
 	}, useMaster)
+
+	if err != nil {
+		return
+	}
+
+	return ToMap(sqlRows)
 }
 
 func (g *group) Exec(sqlStr string, args ...interface{}) (result sql.Result, err error) {
@@ -305,20 +316,55 @@ func (g *group) UpdateObj(obj interface{}) (result sql.Result, err error) {
 	})
 }
 
-func (g *group) Find(query Query, useMaster bool) (rows *sql.Rows, err error) {
-	args := base.AcquireArgs()
+func (g *group) Find(query Query, useMaster bool) (rows []map[string]string, err error) {
+	var (
+		sqlRows *sql.Rows
+
+		args   = base.AcquireArgs()
+		sqlStr = query.Sql(&args)
+	)
+
 	defer base.ReleaseArgs(&args)
 
-	return g.query(func(mPool Pool) (*sql.Rows, error) {
-		return mPool.Query(query.Sql(&args), args...)
+	sqlRows, err = g.query(func(mPool Pool) (*sql.Rows, error) {
+		return mPool.Query(sqlStr, args...)
 	}, useMaster)
+
+	if err != nil {
+		return
+	}
+
+	return ToMap(sqlRows)
 }
 
-func (g *group) FindOne(condtion Condition, useMaster bool) (row map[string]string, err error) {
+func (g *group) FindAll(query Query, obj interface{}, useMaster bool) (objList interface{}, err error) {
 	var (
-		args  = base.AcquireArgs()
-		query = NewMysqlQuery().Where(condtion).Limit(1)
-		rows  *sql.Rows
+		sqlRows *sql.Rows
+
+		args   = base.AcquireArgs()
+		sqlStr = query.Sql(&args)
+	)
+
+	defer base.ReleaseArgs(&args)
+
+	sqlRows, err = g.query(func(mPool Pool) (*sql.Rows, error) {
+		return mPool.Query(sqlStr, args...)
+	}, useMaster)
+
+	if err != nil {
+		return
+	}
+
+	return ToObjList(sqlRows, obj)
+}
+
+func (g *group) FindOne(table string, condition Condition, useMaster bool) (row map[string]string, err error) {
+	var (
+		rows *sql.Rows
+
+		args   = base.AcquireArgs()
+		query  = NewMysqlQuery().From(table).Where(condition).Limit(1)
+		sqlStr = query.Sql(&args)
 	)
 
 	defer func() {
@@ -327,7 +373,7 @@ func (g *group) FindOne(condtion Condition, useMaster bool) (row map[string]stri
 	}()
 
 	rows, err = g.query(func(mPool Pool) (*sql.Rows, error) {
-		return mPool.Query(query.Sql(&args), args...)
+		return mPool.Query(sqlStr, args...)
 	}, useMaster)
 
 	if err != nil {
@@ -345,20 +391,21 @@ func (g *group) FindOne(condtion Condition, useMaster bool) (row map[string]stri
 	return
 }
 
-func (g *group) FindOneObj(condtion Condition, useMaster bool, obj interface{}) (err error) {
+func (g *group) FindOneObj(condition Condition, useMaster bool, obj interface{}) (err error) {
 	var (
-		args  = base.AcquireArgs()
-		query = NewMysqlQuery().Where(condtion).Limit(1)
-		rows  *sql.Rows
+		args = base.AcquireArgs()
+		rows *sql.Rows
 	)
 
-	defer func() {
-		base.ReleaseArgs(&args)
-		query.Close()
-	}()
+	defer base.ReleaseArgs(&args)
+
+	sqlStr, err := SqlFindOneObj(&args, condition, obj)
+	if err != nil {
+		return err
+	}
 
 	rows, err = g.query(func(mPool Pool) (*sql.Rows, error) {
-		return mPool.Query(query.Sql(&args), args...)
+		return mPool.Query(sqlStr, args...)
 	}, useMaster)
 
 	if err != nil {
@@ -375,17 +422,23 @@ func (g *group) Insert(table string, rows ...map[string]interface{}) (result sql
 }
 
 func (g *group) DeleteAll(table string, condition Condition) (result sql.Result, err error) {
-	args := base.AcquireArgs()
+	var (
+		args   = base.AcquireArgs()
+		sqlStr = SqlDelete(&args, table, condition)
+	)
 	defer base.ReleaseArgs(&args)
 
-	return g.Exec(SqlDelete(&args, table, condition), args...)
+	return g.Exec(sqlStr, args...)
 }
 
 func (g *group) UpdateAll(table string, set map[string]interface{}, condition Condition) (result sql.Result, err error) {
-	args := base.AcquireArgs()
+	var (
+		args   = base.AcquireArgs()
+		sqlStr = SqlUpdate(&args, table, set, condition)
+	)
 	defer base.ReleaseArgs(&args)
 
-	return g.Exec(SqlUpdate(&args, table, set, condition), args...)
+	return g.Exec(sqlStr, args...)
 }
 
 func (g *group) Begin() (*sql.Tx, error) {
