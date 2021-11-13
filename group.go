@@ -28,19 +28,31 @@ type GroupOption struct {
 type Group interface {
 	BadPool(isMaster bool) (list []int)
 	Query(useMaster bool, sqlStr string, args ...interface{}) (rows []map[string]string, err error)
+	QueryContext(ctx context.Context, useMaster bool, sqlStr string, args ...interface{}) (rows []map[string]string, err error)
 	Exec(sqlStr string, args ...interface{}) (result sql.Result, err error)
+	ExecContext(ctx context.Context, sqlStr string, args ...interface{}) (result sql.Result, err error)
 	InsertObj(obj interface{}) (result sql.Result, err error)
+	InsertObjContext(ctx context.Context, obj interface{}) (result sql.Result, err error)
 	DeleteObj(obj interface{}) (result sql.Result, err error)
+	DeleteObjContext(ctx context.Context, obj interface{}) (result sql.Result, err error)
 	UpdateObj(obj interface{}) (result sql.Result, err error)
+	UpdateObjContext(ctx context.Context, obj interface{}) (result sql.Result, err error)
 	Find(query Query, useMaster bool) (rows []map[string]string, err error)
+	FindContext(ctx context.Context, query Query, useMaster bool) (rows []map[string]string, err error)
 	FindAll(query Query, obj interface{}, useMaster bool) (objList interface{}, err error)
+	FindAllContext(ctx context.Context, query Query, obj interface{}, useMaster bool) (objList interface{}, err error)
 	FindOne(table string, condition Condition, useMaster bool) (row map[string]string, err error)
+	FindOneContext(ctx context.Context, table string, condition Condition, useMaster bool) (row map[string]string, err error)
 	FindOneObj(condition Condition, useMaster bool, obj interface{}) (err error)
+	FindOneObjContext(ctx context.Context, condition Condition, useMaster bool, obj interface{}) (err error)
 	Insert(table string, rows ...map[string]interface{}) (result sql.Result, err error)
+	InsertContext(ctx context.Context, table string, rows ...map[string]interface{}) (result sql.Result, err error)
 	DeleteAll(table string, condition Condition) (result sql.Result, err error)
+	DeleteAllContext(ctx context.Context, table string, condition Condition) (result sql.Result, err error)
 	UpdateAll(table string, set map[string]interface{}, condition Condition) (result sql.Result, err error)
-	Begin() (*sql.Tx, error)
-	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+	UpdateAllContext(ctx context.Context, table string, set map[string]interface{}, condition Condition) (result sql.Result, err error)
+	Begin() (Transaction, error)
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (Transaction, error)
 }
 
 type group struct {
@@ -268,9 +280,31 @@ func (g *group) Query(useMaster bool, sqlStr string, args ...interface{}) (rows 
 	return ToMap(sqlRows)
 }
 
+func (g *group) QueryContext(ctx context.Context, useMaster bool, sqlStr string, args ...interface{}) (rows []map[string]string, err error) {
+	var (
+		sqlRows *sql.Rows
+	)
+
+	sqlRows, err = g.query(func(mPool Pool) (*sql.Rows, error) {
+		return mPool.QueryContext(ctx, sqlStr, args...)
+	}, useMaster)
+
+	if err != nil {
+		return
+	}
+
+	return ToMap(sqlRows)
+}
+
 func (g *group) Exec(sqlStr string, args ...interface{}) (result sql.Result, err error) {
 	return g.exec(func(mPool Pool) (sql.Result, error) {
-		return mPool.Execute(sqlStr, args...)
+		return mPool.Exec(sqlStr, args...)
+	})
+}
+
+func (g *group) ExecContext(ctx context.Context, sqlStr string, args ...interface{}) (result sql.Result, err error) {
+	return g.exec(func(mPool Pool) (sql.Result, error) {
+		return mPool.ExecContext(ctx, sqlStr, args...)
 	})
 }
 
@@ -284,7 +318,21 @@ func (g *group) InsertObj(obj interface{}) (result sql.Result, err error) {
 	}
 
 	return g.exec(func(mPool Pool) (sql.Result, error) {
-		return mPool.Execute(sqlStr, args...)
+		return mPool.Exec(sqlStr, args...)
+	})
+}
+
+func (g *group) InsertObjContext(ctx context.Context, obj interface{}) (result sql.Result, err error) {
+	args := base.AcquireArgs()
+	defer base.ReleaseArgs(&args)
+
+	sqlStr, err := SqlInsertObjs(&args, obj)
+	if err != nil {
+		return nil, err
+	}
+
+	return g.exec(func(mPool Pool) (sql.Result, error) {
+		return mPool.ExecContext(ctx, sqlStr, args...)
 	})
 }
 
@@ -298,7 +346,21 @@ func (g *group) DeleteObj(obj interface{}) (result sql.Result, err error) {
 	}
 
 	return g.exec(func(mPool Pool) (sql.Result, error) {
-		return mPool.Execute(sqlStr, args...)
+		return mPool.Exec(sqlStr, args...)
+	})
+}
+
+func (g *group) DeleteObjContext(ctx context.Context, obj interface{}) (result sql.Result, err error) {
+	args := base.AcquireArgs()
+	defer base.ReleaseArgs(&args)
+
+	sqlStr, err := SqlDeleteByObj(&args, obj)
+	if err != nil {
+		return nil, err
+	}
+
+	return g.exec(func(mPool Pool) (sql.Result, error) {
+		return mPool.ExecContext(ctx, sqlStr, args...)
 	})
 }
 
@@ -312,7 +374,21 @@ func (g *group) UpdateObj(obj interface{}) (result sql.Result, err error) {
 	}
 
 	return g.exec(func(mPool Pool) (sql.Result, error) {
-		return mPool.Execute(sqlStr, args...)
+		return mPool.Exec(sqlStr, args...)
+	})
+}
+
+func (g *group) UpdateObjContext(ctx context.Context, obj interface{}) (result sql.Result, err error) {
+	args := base.AcquireArgs()
+	defer base.ReleaseArgs(&args)
+
+	sqlStr, err := SqlUpdateByObj(&args, obj)
+	if err != nil {
+		return nil, err
+	}
+
+	return g.exec(func(mPool Pool) (sql.Result, error) {
+		return mPool.ExecContext(ctx, sqlStr, args...)
 	})
 }
 
@@ -337,6 +413,27 @@ func (g *group) Find(query Query, useMaster bool) (rows []map[string]string, err
 	return ToMap(sqlRows)
 }
 
+func (g *group) FindContext(ctx context.Context, query Query, useMaster bool) (rows []map[string]string, err error) {
+	var (
+		sqlRows *sql.Rows
+
+		args   = base.AcquireArgs()
+		sqlStr = query.Sql(&args)
+	)
+
+	defer base.ReleaseArgs(&args)
+
+	sqlRows, err = g.query(func(mPool Pool) (*sql.Rows, error) {
+		return mPool.QueryContext(ctx, sqlStr, args...)
+	}, useMaster)
+
+	if err != nil {
+		return
+	}
+
+	return ToMap(sqlRows)
+}
+
 func (g *group) FindAll(query Query, obj interface{}, useMaster bool) (objList interface{}, err error) {
 	var (
 		sqlRows *sql.Rows
@@ -349,6 +446,27 @@ func (g *group) FindAll(query Query, obj interface{}, useMaster bool) (objList i
 
 	sqlRows, err = g.query(func(mPool Pool) (*sql.Rows, error) {
 		return mPool.Query(sqlStr, args...)
+	}, useMaster)
+
+	if err != nil {
+		return
+	}
+
+	return ToObjList(sqlRows, obj)
+}
+
+func (g *group) FindAllContext(ctx context.Context, query Query, obj interface{}, useMaster bool) (objList interface{}, err error) {
+	var (
+		sqlRows *sql.Rows
+
+		args   = base.AcquireArgs()
+		sqlStr = query.Sql(&args)
+	)
+
+	defer base.ReleaseArgs(&args)
+
+	sqlRows, err = g.query(func(mPool Pool) (*sql.Rows, error) {
+		return mPool.QueryContext(ctx, sqlStr, args...)
 	}, useMaster)
 
 	if err != nil {
@@ -391,6 +509,39 @@ func (g *group) FindOne(table string, condition Condition, useMaster bool) (row 
 	return
 }
 
+func (g *group) FindOneContext(ctx context.Context, table string, condition Condition, useMaster bool) (row map[string]string, err error) {
+	var (
+		rows *sql.Rows
+
+		args   = base.AcquireArgs()
+		query  = NewMysqlQuery().From(table).Where(condition).Limit(1)
+		sqlStr = query.Sql(&args)
+	)
+
+	defer func() {
+		base.ReleaseArgs(&args)
+		query.Close()
+	}()
+
+	rows, err = g.query(func(mPool Pool) (*sql.Rows, error) {
+		return mPool.QueryContext(ctx, sqlStr, args...)
+	}, useMaster)
+
+	if err != nil {
+		return
+	}
+
+	tRows, err := ToMap(rows)
+	if err != nil {
+		return
+	}
+
+	if len(tRows) > 0 {
+		return tRows[0], nil
+	}
+	return
+}
+
 func (g *group) FindOneObj(condition Condition, useMaster bool, obj interface{}) (err error) {
 	var (
 		args = base.AcquireArgs()
@@ -414,11 +565,47 @@ func (g *group) FindOneObj(condition Condition, useMaster bool, obj interface{})
 	return ToObj(rows, obj)
 }
 
-func (g *group) Insert(table string, rows ...map[string]interface{}) (result sql.Result, err error) {
-	args := base.AcquireArgs()
+func (g *group) FindOneObjContext(ctx context.Context, condition Condition, useMaster bool, obj interface{}) (err error) {
+	var (
+		args = base.AcquireArgs()
+		rows *sql.Rows
+	)
+
 	defer base.ReleaseArgs(&args)
 
-	return g.Exec(SqlInsert(&args, table, rows...), args...)
+	sqlStr, err := SqlFindOneObj(&args, condition, obj)
+	if err != nil {
+		return err
+	}
+
+	rows, err = g.query(func(mPool Pool) (*sql.Rows, error) {
+		return mPool.QueryContext(ctx, sqlStr, args...)
+	}, useMaster)
+
+	if err != nil {
+		return
+	}
+	return ToObj(rows, obj)
+}
+
+func (g *group) Insert(table string, rows ...map[string]interface{}) (result sql.Result, err error) {
+	var (
+		args   = base.AcquireArgs()
+		sqlStr = SqlInsert(&args, table, rows...)
+	)
+	defer base.ReleaseArgs(&args)
+
+	return g.Exec(sqlStr, args...)
+}
+
+func (g *group) InsertContext(ctx context.Context, table string, rows ...map[string]interface{}) (result sql.Result, err error) {
+	var (
+		args   = base.AcquireArgs()
+		sqlStr = SqlInsert(&args, table, rows...)
+	)
+	defer base.ReleaseArgs(&args)
+
+	return g.ExecContext(ctx, sqlStr, args...)
 }
 
 func (g *group) DeleteAll(table string, condition Condition) (result sql.Result, err error) {
@@ -431,6 +618,16 @@ func (g *group) DeleteAll(table string, condition Condition) (result sql.Result,
 	return g.Exec(sqlStr, args...)
 }
 
+func (g *group) DeleteAllContext(ctx context.Context, table string, condition Condition) (result sql.Result, err error) {
+	var (
+		args   = base.AcquireArgs()
+		sqlStr = SqlDelete(&args, table, condition)
+	)
+	defer base.ReleaseArgs(&args)
+
+	return g.ExecContext(ctx, sqlStr, args...)
+}
+
 func (g *group) UpdateAll(table string, set map[string]interface{}, condition Condition) (result sql.Result, err error) {
 	var (
 		args   = base.AcquireArgs()
@@ -441,7 +638,17 @@ func (g *group) UpdateAll(table string, set map[string]interface{}, condition Co
 	return g.Exec(sqlStr, args...)
 }
 
-func (g *group) Begin() (*sql.Tx, error) {
+func (g *group) UpdateAllContext(ctx context.Context, table string, set map[string]interface{}, condition Condition) (result sql.Result, err error) {
+	var (
+		args   = base.AcquireArgs()
+		sqlStr = SqlUpdate(&args, table, set, condition)
+	)
+	defer base.ReleaseArgs(&args)
+
+	return g.ExecContext(ctx, sqlStr, args...)
+}
+
+func (g *group) Begin() (Transaction, error) {
 	for start := 0; start < g.masterLen; start++ {
 		index, pool, badTime := g.getMaster()
 		tx, err := pool.Begin()
@@ -453,7 +660,7 @@ func (g *group) Begin() (*sql.Tx, error) {
 	return nil, ErrNoMasterConn
 }
 
-func (g *group) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+func (g *group) BeginTx(ctx context.Context, opts *sql.TxOptions) (Transaction, error) {
 	for start := 0; start < g.masterLen; start++ {
 		index, pool, badTime := g.getMaster()
 		tx, err := pool.BeginTx(ctx, opts)

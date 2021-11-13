@@ -19,9 +19,11 @@ type PoolOption struct {
 
 type Pool interface {
 	Query(sqlStr string, args ...interface{}) (rows *sql.Rows, err error)
-	Execute(sqlStr string, args ...interface{}) (result sql.Result, err error)
-	Begin() (*sql.Tx, error)
-	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+	QueryContext(ctx context.Context, sqlStr string, args ...interface{}) (rows *sql.Rows, err error)
+	Exec(sqlStr string, args ...interface{}) (result sql.Result, err error)
+	ExecContext(ctx context.Context, sqlStr string, args ...interface{}) (result sql.Result, err error)
+	Begin() (Transaction, error)
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (Transaction, error)
 }
 
 type mysqlPool struct {
@@ -49,14 +51,32 @@ func (mp *mysqlPool) Query(sqlStr string, args ...interface{}) (rows *sql.Rows, 
 	return mp.db.Query(sqlStr, args...)
 }
 
-func (mp *mysqlPool) Execute(sqlStr string, args ...interface{}) (result sql.Result, err error) {
+func (mp *mysqlPool) QueryContext(ctx context.Context, sqlStr string, args ...interface{}) (rows *sql.Rows, err error) {
+	return mp.db.QueryContext(ctx, sqlStr, args...)
+}
+
+func (mp *mysqlPool) Exec(sqlStr string, args ...interface{}) (result sql.Result, err error) {
 	return mp.db.Exec(sqlStr, args...)
 }
 
-func (mp *mysqlPool) Begin() (*sql.Tx, error) {
-	return mp.db.Begin()
+func (mp *mysqlPool) ExecContext(ctx context.Context, sqlStr string, args ...interface{}) (result sql.Result, err error) {
+	return mp.db.ExecContext(ctx, sqlStr, args...)
 }
 
-func (mp *mysqlPool) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
-	return mp.db.BeginTx(ctx, opts)
+func (mp *mysqlPool) Begin() (Transaction, error) {
+	tx, err := mp.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+
+	return newTx(tx), err
+}
+
+func (mp *mysqlPool) BeginTx(ctx context.Context, opts *sql.TxOptions) (Transaction, error) {
+	tx, err := mp.db.BeginTx(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return newTx(tx), err
 }

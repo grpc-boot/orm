@@ -4,6 +4,7 @@ package orm
 // go test -bench=. -benchmem -benchtime=5s
 // brew services start mysql
 import (
+	"context"
 	"log"
 	"testing"
 	"time"
@@ -16,13 +17,23 @@ var (
 )
 
 type User struct {
-	Id       int64  `borm:"id,primary"`
-	NickName string `borm:"nickname"`
-	IsOn     uint8  `borm:"is_on,required"`
+	Id        int64  `borm:"id,primary"`
+	NickName  string `borm:"nickname"`
+	IsOn      uint8  `borm:"is_on,required"`
+	CreatedAt int64  `borm:"created_at"`
+	UpdatedAt int64  `borm:"updated_at"`
 }
 
-func (u User) TableName() string {
+func (u *User) TableName() string {
 	return `user`
+}
+
+func (u *User) BeforeCreate() {
+	u.CreatedAt = time.Now().Unix()
+}
+
+func (u *User) BeforeSave() {
+	u.UpdatedAt = time.Now().Unix()
 }
 
 func init() {
@@ -30,10 +41,20 @@ func init() {
 	g, err = NewMysqlGroup(&GroupOption{
 		Masters: []PoolOption{
 			{
-				Dsn: ``,
+				Dsn:             `root:123456@tcp(127.0.0.1:3306)/dd?timeout=5s&readTimeout=6s`,
+				MaxConnLifetime: 600,
+				MaxOpenConns:    15,
+				MaxIdleConns:    5,
 			},
 		},
-		Slaves:        []PoolOption{},
+		Slaves: []PoolOption{
+			{
+				Dsn:             `root:123456@tcp(127.0.0.1:3306)/dd?timeout=5s&readTimeout=6s`,
+				MaxConnLifetime: 600,
+				MaxOpenConns:    15,
+				MaxIdleConns:    5,
+			},
+		},
 		RetryInterval: 60,
 	})
 
@@ -203,6 +224,52 @@ func TestDeleteByObj(t *testing.T) {
 	}
 
 	t.Log(sql, args)
+}
+
+func TestTransaction_Commit(t *testing.T) {
+	tx, err := g.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var (
+		user        User
+		ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+	)
+
+	defer func() {
+		cancel()
+	}()
+
+	err = tx.FindOneObjContext(ctx, AndCondition(map[string][]interface{}{
+		"id":         {1},
+		"updated_at": {0},
+	}), &user)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if user.Id < 1 {
+		t.Fatalf("want %d, got 0", user.Id)
+	}
+
+	res, err := tx.UpdateObj(&user)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rows == 1 {
+		_ = tx.Commit()
+	} else {
+		_ = tx.Rollback()
+	}
+
+	t.Log(user)
 }
 
 // BenchmarkMysqlQuery_Sql-4         951957              1088 ns/op            1000 B/op         20 allocs/op
