@@ -6,6 +6,7 @@ package orm
 import (
 	"context"
 	"log"
+	"strconv"
 	"testing"
 	"time"
 
@@ -46,8 +47,50 @@ func init() {
 				MaxOpenConns:    15,
 				MaxIdleConns:    5,
 			},
+			{
+				Dsn:             `root:123456@tcp(127.0.0.1:3306)/dd?timeout=5s&readTimeout=6s`,
+				MaxConnLifetime: 600,
+				MaxOpenConns:    15,
+				MaxIdleConns:    5,
+			},
+			{
+				Dsn:             `root:123456@tcp(127.0.0.1:3306)/dd?timeout=5s&readTimeout=6s`,
+				MaxConnLifetime: 600,
+				MaxOpenConns:    15,
+				MaxIdleConns:    5,
+			},
+			{
+				Dsn:             `root:123456@tcp(127.0.0.1:3306)/dd?timeout=5s&readTimeout=6s`,
+				MaxConnLifetime: 600,
+				MaxOpenConns:    15,
+				MaxIdleConns:    5,
+			},
 		},
 		Slaves: []PoolOption{
+			{
+				Dsn:             `root:123456@tcp(127.0.0.1:3306)/dd?timeout=5s&readTimeout=6s`,
+				MaxConnLifetime: 600,
+				MaxOpenConns:    15,
+				MaxIdleConns:    5,
+			},
+			{
+				Dsn:             `root:123456@tcp(127.0.0.1:3306)/dd?timeout=5s&readTimeout=6s`,
+				MaxConnLifetime: 600,
+				MaxOpenConns:    15,
+				MaxIdleConns:    5,
+			},
+			{
+				Dsn:             `root:123456@tcp(127.0.0.1:3306)/dd?timeout=5s&readTimeout=6s`,
+				MaxConnLifetime: 600,
+				MaxOpenConns:    15,
+				MaxIdleConns:    5,
+			},
+			{
+				Dsn:             `root:123456@tcp(127.0.0.1:3306)/dd?timeout=5s&readTimeout=6s`,
+				MaxConnLifetime: 600,
+				MaxOpenConns:    15,
+				MaxIdleConns:    5,
+			},
 			{
 				Dsn:             `root:123456@tcp(127.0.0.1:3306)/dd?timeout=5s&readTimeout=6s`,
 				MaxConnLifetime: 600,
@@ -242,15 +285,10 @@ func TestTransaction_Commit(t *testing.T) {
 	}()
 
 	err = tx.FindOneObjContext(ctx, AndCondition(map[string][]interface{}{
-		"id":         {1},
 		"updated_at": {0},
 	}), &user)
 	if err != nil {
 		t.Fatal(err)
-	}
-
-	if user.Id < 1 {
-		t.Fatalf("want %d, got 0", user.Id)
 	}
 
 	res, err := tx.UpdateObj(&user)
@@ -343,4 +381,31 @@ func BenchmarkDeleteByObj(b *testing.B) {
 
 		base.ReleaseArgs(&args)
 	}
+}
+
+func BenchmarkGroup_Insert(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, err := g.Insert(`user`, map[string]interface{}{
+				"nickname": strconv.FormatInt(time.Now().UnixNano(), 10),
+			})
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+func BenchmarkGroup_InsertObj(b *testing.B) {
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			user := User{
+				NickName: strconv.FormatInt(time.Now().UnixNano(), 10),
+			}
+			_, err := g.InsertObj(&user)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
