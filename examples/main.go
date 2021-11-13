@@ -13,12 +13,12 @@ import (
 
 /**
 CREATE TABLE `user` (
-`id` int unsigned NOT NULL AUTO_INCREMENT COMMENT '用户ID',
-`nickname` varchar(32) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT '' COMMENT '昵称',
-`created_at` bigint unsigned DEFAULT NULL COMMENT '创建时间',
-`updated_at` bigint unsigned DEFAULT '0' COMMENT '更新时间',
-`is_on` tinyint unsigned DEFAULT '0' COMMENT '是否启用(0未启用，1启用)',
-PRIMARY KEY (`id`)
+  `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT '用户ID',
+  `nickname` varchar(32) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT '' COMMENT '昵称',
+  `created_at` bigint unsigned DEFAULT NULL COMMENT '创建时间',
+  `updated_at` bigint unsigned DEFAULT '0' COMMENT '更新时间',
+  `is_on` tinyint unsigned DEFAULT '0' COMMENT '启用状态',
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 */
 
