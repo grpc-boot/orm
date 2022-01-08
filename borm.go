@@ -35,7 +35,8 @@ func tableName(value reflect.Value) (tableName string) {
 	return strings.ToLower(value.Type().Name())
 }
 
-func SqlFindOneObj(args *[]interface{}, condition Condition, obj interface{}) (sql string, err error) {
+// SqlFindOneObj ---
+func SqlFindOneObj(args *[]interface{}, where Where, obj interface{}) (sql string, err error) {
 	var (
 		value = reflect.ValueOf(obj)
 	)
@@ -57,11 +58,16 @@ func SqlFindOneObj(args *[]interface{}, condition Condition, obj interface{}) (s
 	sqlBuffer.WriteString("SELECT * FROM `")
 	sqlBuffer.WriteString(tableName(value))
 	sqlBuffer.WriteByte('`')
-	sqlBuffer.WriteString(Where{AndWhere(condition)}.Sql(args))
+
+	if where != nil {
+		sqlBuffer.WriteString(where.Sql(args))
+	}
+
 	sqlBuffer.WriteString(` LIMIT 1`)
 	return sqlBuffer.String(), nil
 }
 
+// SqlInsertObjs ---
 func SqlInsertObjs(args *[]interface{}, rows interface{}) (sql string, err error) {
 	var (
 		vRows  = reflect.ValueOf(rows)
@@ -185,6 +191,7 @@ func SqlInsertObjs(args *[]interface{}, rows interface{}) (sql string, err error
 	return sqlBuffer.String(), nil
 }
 
+// SqlDeleteByObj ---
 func SqlDeleteByObj(args *[]interface{}, obj interface{}) (sqlStr string, err error) {
 	var (
 		sqlBuffer strings.Builder
@@ -207,7 +214,7 @@ func SqlDeleteByObj(args *[]interface{}, obj interface{}) (sqlStr string, err er
 
 		dbField   string
 		isPrimary bool
-		where     = make(map[string][]interface{}, 2)
+		fm        = make(FieldMap, 2)
 	)
 
 	//寻找数据库字段和值
@@ -228,13 +235,13 @@ func SqlDeleteByObj(args *[]interface{}, obj interface{}) (sqlStr string, err er
 		}
 
 		if isPrimary {
-			where[dbField] = []interface{}{value.Field(i).Interface()}
+			fm[dbField] = []interface{}{value.Field(i).Interface()}
 			continue
 		}
 	}
 
 	//没有找到主键
-	if len(where) < 1 {
+	if len(fm) < 1 {
 		return "", ErrNotFoundPrimaryField
 	}
 
@@ -242,11 +249,12 @@ func SqlDeleteByObj(args *[]interface{}, obj interface{}) (sqlStr string, err er
 	sqlBuffer.WriteByte('`')
 	sqlBuffer.WriteString(tableName(value))
 	sqlBuffer.WriteByte('`')
-	sqlBuffer.WriteString((Where{AndWhere(AndCondition(where))}).Sql(args))
+	sqlBuffer.WriteString(NewWhere(AndCondition(fm)).Sql(args))
 
 	return sqlBuffer.String(), nil
 }
 
+// SqlUpdateByObj ---
 func SqlUpdateByObj(args *[]interface{}, obj interface{}) (sqlStr string, err error) {
 	var (
 		sqlBuffer strings.Builder
@@ -279,7 +287,7 @@ func SqlUpdateByObj(args *[]interface{}, obj interface{}) (sqlStr string, err er
 		isRequired  bool
 		isPrimary   bool
 		hasSetField bool
-		where       = make(map[string][]interface{}, 2)
+		fm          = make(FieldMap, 2)
 	)
 
 	//寻找数据库字段和值
@@ -304,7 +312,7 @@ func SqlUpdateByObj(args *[]interface{}, obj interface{}) (sqlStr string, err er
 		}
 
 		if isPrimary {
-			where[dbField] = []interface{}{value.Field(i).Interface()}
+			fm[dbField] = []interface{}{value.Field(i).Interface()}
 			continue
 		}
 
@@ -335,10 +343,10 @@ func SqlUpdateByObj(args *[]interface{}, obj interface{}) (sqlStr string, err er
 	}
 
 	//没有找到主键
-	if len(where) < 1 {
+	if len(fm) < 1 {
 		return "", ErrNotFoundPrimaryField
 	}
 
-	sqlBuffer.WriteString((Where{AndWhere(AndCondition(where))}).Sql(args))
+	sqlBuffer.WriteString(NewWhere(AndCondition(fm)).Sql(args))
 	return sqlBuffer.String(), nil
 }

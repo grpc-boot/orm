@@ -26,38 +26,63 @@ type GroupOption struct {
 }
 
 type Group interface {
+	// BadPool 获取BadPool列表
 	BadPool(isMaster bool) (list []int)
+	// Query 查询
 	Query(useMaster bool, sqlStr string, args ...interface{}) (rows []map[string]string, err error)
+	// QueryContext with context 查询
 	QueryContext(ctx context.Context, useMaster bool, sqlStr string, args ...interface{}) (rows []map[string]string, err error)
+	// Exec 执行
 	Exec(sqlStr string, args ...interface{}) (result sql.Result, err error)
+	// ExecContext with context 执行
 	ExecContext(ctx context.Context, sqlStr string, args ...interface{}) (result sql.Result, err error)
+	// InsertObj 插入对象
 	InsertObj(obj interface{}) (result sql.Result, err error)
+	// InsertObjContext with context 插入对象
 	InsertObjContext(ctx context.Context, obj interface{}) (result sql.Result, err error)
+	// DeleteObj 删除对象
 	DeleteObj(obj interface{}) (result sql.Result, err error)
+	// DeleteObjContext with context 删除对象
 	DeleteObjContext(ctx context.Context, obj interface{}) (result sql.Result, err error)
+	// UpdateObj 更新对象
 	UpdateObj(obj interface{}) (result sql.Result, err error)
+	// UpdateObjContext with context 更新对象
 	UpdateObjContext(ctx context.Context, obj interface{}) (result sql.Result, err error)
+	// Find 根据Query查询
 	Find(query Query, useMaster bool) (rows []map[string]string, err error)
+	// FindContext with context 根据Query查询
 	FindContext(ctx context.Context, query Query, useMaster bool) (rows []map[string]string, err error)
-	FindAll(query Query, obj interface{}, useMaster bool) (objList interface{}, err error)
-	FindAllContext(ctx context.Context, query Query, obj interface{}, useMaster bool) (objList interface{}, err error)
-	FindOne(table string, condition Condition, useMaster bool) (row map[string]string, err error)
-	FindOneContext(ctx context.Context, table string, condition Condition, useMaster bool) (row map[string]string, err error)
-	FindOneObj(condition Condition, useMaster bool, obj interface{}) (err error)
-	FindOneObjContext(ctx context.Context, condition Condition, useMaster bool, obj interface{}) (err error)
-	Insert(table string, rows ...map[string]interface{}) (result sql.Result, err error)
-	InsertContext(ctx context.Context, table string, rows ...map[string]interface{}) (result sql.Result, err error)
-	DeleteAll(table string, condition Condition) (result sql.Result, err error)
-	DeleteAllContext(ctx context.Context, table string, condition Condition) (result sql.Result, err error)
-	UpdateAll(table string, set map[string]interface{}, condition Condition) (result sql.Result, err error)
-	UpdateAllContext(ctx context.Context, table string, set map[string]interface{}, condition Condition) (result sql.Result, err error)
+	// FindAll 根据Query查询，返回对象列表
+	FindAll(query Query, obj interface{}, useMaster bool) (objList []interface{}, err error)
+	// FindAllContext with context 根据Query查询，返回对象列表
+	FindAllContext(ctx context.Context, query Query, obj interface{}, useMaster bool) (objList []interface{}, err error)
+	// FindOne 查询一个
+	FindOne(table string, where Where, useMaster bool) (row map[string]string, err error)
+	// FindOneContext with context  查询一个
+	FindOneContext(ctx context.Context, table string, where Where, useMaster bool) (row map[string]string, err error)
+	// FindOneObj 查询一个对象
+	FindOneObj(where Where, obj interface{}, useMaster bool) (err error)
+	// FindOneObjContext with context  查询一个对象
+	FindOneObjContext(ctx context.Context, where Where, obj interface{}, useMaster bool) (err error)
+	// Insert 插入
+	Insert(table string, rows ...Row) (result sql.Result, err error)
+	// InsertContext with context 插入
+	InsertContext(ctx context.Context, table string, rows ...Row) (result sql.Result, err error)
+	// DeleteAll 删除
+	DeleteAll(table string, where Where) (result sql.Result, err error)
+	// DeleteAllContext with context 删除
+	DeleteAllContext(ctx context.Context, table string, where Where) (result sql.Result, err error)
+	// UpdateAll 更新
+	UpdateAll(table string, set Row, where Where) (result sql.Result, err error)
+	// UpdateAllContext with context 更新
+	UpdateAllContext(ctx context.Context, table string, set Row, where Where) (result sql.Result, err error)
+	// Begin 开启事务
 	Begin() (Transaction, error)
+	// BeginTx with context 开启事务
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (Transaction, error)
 }
 
 type group struct {
-	Group
-
 	masters map[int]Pool
 	slaves  map[int]Pool
 
@@ -434,7 +459,7 @@ func (g *group) FindContext(ctx context.Context, query Query, useMaster bool) (r
 	return ToMap(sqlRows)
 }
 
-func (g *group) FindAll(query Query, obj interface{}, useMaster bool) (objList interface{}, err error) {
+func (g *group) FindAll(query Query, obj interface{}, useMaster bool) (objList []interface{}, err error) {
 	var (
 		sqlRows *sql.Rows
 
@@ -455,7 +480,7 @@ func (g *group) FindAll(query Query, obj interface{}, useMaster bool) (objList i
 	return ToObjList(sqlRows, obj)
 }
 
-func (g *group) FindAllContext(ctx context.Context, query Query, obj interface{}, useMaster bool) (objList interface{}, err error) {
+func (g *group) FindAllContext(ctx context.Context, query Query, obj interface{}, useMaster bool) (objList []interface{}, err error) {
 	var (
 		sqlRows *sql.Rows
 
@@ -476,12 +501,12 @@ func (g *group) FindAllContext(ctx context.Context, query Query, obj interface{}
 	return ToObjList(sqlRows, obj)
 }
 
-func (g *group) FindOne(table string, condition Condition, useMaster bool) (row map[string]string, err error) {
+func (g *group) FindOne(table string, where Where, useMaster bool) (row map[string]string, err error) {
 	var (
 		rows *sql.Rows
 
 		args   = base.AcquireArgs()
-		query  = NewMysqlQuery().From(table).Where(condition).Limit(1)
+		query  = AcquireQuery4Mysql().From(table).Where(where).Limit(1)
 		sqlStr = query.Sql(&args)
 	)
 
@@ -509,12 +534,12 @@ func (g *group) FindOne(table string, condition Condition, useMaster bool) (row 
 	return
 }
 
-func (g *group) FindOneContext(ctx context.Context, table string, condition Condition, useMaster bool) (row map[string]string, err error) {
+func (g *group) FindOneContext(ctx context.Context, table string, where Where, useMaster bool) (row map[string]string, err error) {
 	var (
 		rows *sql.Rows
 
 		args   = base.AcquireArgs()
-		query  = NewMysqlQuery().From(table).Where(condition).Limit(1)
+		query  = AcquireQuery4Mysql().From(table).Where(where).Limit(1)
 		sqlStr = query.Sql(&args)
 	)
 
@@ -542,7 +567,7 @@ func (g *group) FindOneContext(ctx context.Context, table string, condition Cond
 	return
 }
 
-func (g *group) FindOneObj(condition Condition, useMaster bool, obj interface{}) (err error) {
+func (g *group) FindOneObj(where Where, obj interface{}, useMaster bool) (err error) {
 	var (
 		args = base.AcquireArgs()
 		rows *sql.Rows
@@ -550,7 +575,7 @@ func (g *group) FindOneObj(condition Condition, useMaster bool, obj interface{})
 
 	defer base.ReleaseArgs(&args)
 
-	sqlStr, err := SqlFindOneObj(&args, condition, obj)
+	sqlStr, err := SqlFindOneObj(&args, where, obj)
 	if err != nil {
 		return err
 	}
@@ -565,7 +590,7 @@ func (g *group) FindOneObj(condition Condition, useMaster bool, obj interface{})
 	return ToObj(rows, obj)
 }
 
-func (g *group) FindOneObjContext(ctx context.Context, condition Condition, useMaster bool, obj interface{}) (err error) {
+func (g *group) FindOneObjContext(ctx context.Context, where Where, obj interface{}, useMaster bool) (err error) {
 	var (
 		args = base.AcquireArgs()
 		rows *sql.Rows
@@ -573,7 +598,7 @@ func (g *group) FindOneObjContext(ctx context.Context, condition Condition, useM
 
 	defer base.ReleaseArgs(&args)
 
-	sqlStr, err := SqlFindOneObj(&args, condition, obj)
+	sqlStr, err := SqlFindOneObj(&args, where, obj)
 	if err != nil {
 		return err
 	}
@@ -588,7 +613,7 @@ func (g *group) FindOneObjContext(ctx context.Context, condition Condition, useM
 	return ToObj(rows, obj)
 }
 
-func (g *group) Insert(table string, rows ...map[string]interface{}) (result sql.Result, err error) {
+func (g *group) Insert(table string, rows ...Row) (result sql.Result, err error) {
 	var (
 		args   = base.AcquireArgs()
 		sqlStr = SqlInsert(&args, table, rows...)
@@ -598,7 +623,7 @@ func (g *group) Insert(table string, rows ...map[string]interface{}) (result sql
 	return g.Exec(sqlStr, args...)
 }
 
-func (g *group) InsertContext(ctx context.Context, table string, rows ...map[string]interface{}) (result sql.Result, err error) {
+func (g *group) InsertContext(ctx context.Context, table string, rows ...Row) (result sql.Result, err error) {
 	var (
 		args   = base.AcquireArgs()
 		sqlStr = SqlInsert(&args, table, rows...)
@@ -608,40 +633,40 @@ func (g *group) InsertContext(ctx context.Context, table string, rows ...map[str
 	return g.ExecContext(ctx, sqlStr, args...)
 }
 
-func (g *group) DeleteAll(table string, condition Condition) (result sql.Result, err error) {
+func (g *group) DeleteAll(table string, where Where) (result sql.Result, err error) {
 	var (
 		args   = base.AcquireArgs()
-		sqlStr = SqlDelete(&args, table, condition)
+		sqlStr = SqlDelete(&args, table, where)
 	)
 	defer base.ReleaseArgs(&args)
 
 	return g.Exec(sqlStr, args...)
 }
 
-func (g *group) DeleteAllContext(ctx context.Context, table string, condition Condition) (result sql.Result, err error) {
+func (g *group) DeleteAllContext(ctx context.Context, table string, where Where) (result sql.Result, err error) {
 	var (
 		args   = base.AcquireArgs()
-		sqlStr = SqlDelete(&args, table, condition)
+		sqlStr = SqlDelete(&args, table, where)
 	)
 	defer base.ReleaseArgs(&args)
 
 	return g.ExecContext(ctx, sqlStr, args...)
 }
 
-func (g *group) UpdateAll(table string, set map[string]interface{}, condition Condition) (result sql.Result, err error) {
+func (g *group) UpdateAll(table string, set Row, where Where) (result sql.Result, err error) {
 	var (
 		args   = base.AcquireArgs()
-		sqlStr = SqlUpdate(&args, table, set, condition)
+		sqlStr = SqlUpdate(&args, table, set, where)
 	)
 	defer base.ReleaseArgs(&args)
 
 	return g.Exec(sqlStr, args...)
 }
 
-func (g *group) UpdateAllContext(ctx context.Context, table string, set map[string]interface{}, condition Condition) (result sql.Result, err error) {
+func (g *group) UpdateAllContext(ctx context.Context, table string, set Row, where Where) (result sql.Result, err error) {
 	var (
 		args   = base.AcquireArgs()
-		sqlStr = SqlUpdate(&args, table, set, condition)
+		sqlStr = SqlUpdate(&args, table, set, where)
 	)
 	defer base.ReleaseArgs(&args)
 

@@ -18,17 +18,21 @@ type PoolOption struct {
 }
 
 type Pool interface {
+	// Query 查询
 	Query(sqlStr string, args ...interface{}) (rows *sql.Rows, err error)
+	// QueryContext with context 查询
 	QueryContext(ctx context.Context, sqlStr string, args ...interface{}) (rows *sql.Rows, err error)
+	// Exec 执行
 	Exec(sqlStr string, args ...interface{}) (result sql.Result, err error)
+	// ExecContext with context 执行
 	ExecContext(ctx context.Context, sqlStr string, args ...interface{}) (result sql.Result, err error)
+	// Begin 开启事务
 	Begin() (Transaction, error)
+	// BeginTx with context 开启事务
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (Transaction, error)
 }
 
 type mysqlPool struct {
-	Pool
-
 	db *sql.DB
 }
 

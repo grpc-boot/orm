@@ -9,19 +9,25 @@ const (
 	And = `AND`
 )
 
+// FieldMap 列条件
+type FieldMap map[string][]interface{}
+
+// Condition 条件
 type Condition interface {
 	Opt() (opt string)
 	Sql(args *[]interface{}) (sql string)
 }
 
-func OrCondition(fields map[string][]interface{}) Condition {
+// OrCondition Or条件
+func OrCondition(fields FieldMap) Condition {
 	return condition{
 		opt:    Or,
 		fields: fields,
 	}
 }
 
-func AndCondition(fields map[string][]interface{}) Condition {
+// AndCondition And条件
+func AndCondition(fields FieldMap) Condition {
 	return condition{
 		opt:    And,
 		fields: fields,
@@ -29,16 +35,16 @@ func AndCondition(fields map[string][]interface{}) Condition {
 }
 
 type condition struct {
-	Condition
-
 	opt    string
-	fields map[string][]interface{}
+	fields FieldMap
 }
 
+// Opt condition类型
 func (c condition) Opt() (opt string) {
 	return c.opt
 }
 
+// Sql 生成sql
 func (c condition) Sql(args *[]interface{}) (sql string) {
 	if len(c.fields) < 1 {
 		return

@@ -111,13 +111,13 @@ func findOneObj(id int64) *model.User {
 		})
 	)
 
-	u, err := group.FindOne(user.TableName(), condition, false)
+	u, err := group.FindOne(user.TableName(), orm.NewWhere(condition), false)
 	if err != nil {
 		base.RedFatal("find one err:%s", err.Error())
 	}
 	base.Green("find one user:%v", u)
 
-	err = group.FindOneObj(condition, true, user)
+	err = group.FindOneObj(orm.NewWhere(condition), user, true)
 
 	if err != nil {
 		base.RedFatal("find one obj err:%s", err.Error())
@@ -131,7 +131,7 @@ func update(user *model.User) {
 
 	result, err := group.UpdateAll(user.TableName(), map[string]interface{}{
 		"nickname": user.NickName,
-	}, orm.AndCondition(map[string][]interface{}{
+	}, orm.AndWhere(orm.FieldMap{
 		"id": {user.Id},
 	}))
 
@@ -165,7 +165,7 @@ func deleteObj(user *model.User) {
 }
 
 func find() {
-	q := orm.NewMysqlQuery()
+	q := orm.AcquireQuery4Mysql()
 	defer q.Close()
 
 	user := &model.User{}
@@ -176,8 +176,8 @@ func find() {
 		base.RedFatal("find err:%s", err.Error())
 	}
 
-	if uList, ok := userList.([]interface{}); ok {
-		for _, u := range uList {
+	if userList != nil {
+		for _, u := range userList {
 			base.Green("user List:%v", u)
 		}
 	}
@@ -204,7 +204,7 @@ func groupSql() {
 }
 
 func query() {
-	q := orm.NewMysqlQuery()
+	q := orm.AcquireQuery4Mysql()
 	defer q.Close()
 
 	q.Select("id", "is_on").From(`user`).Order("`id` DESC").Offset(1).Limit(10)
@@ -218,7 +218,7 @@ func query() {
 }
 
 func deleteAll() {
-	r, err := group.DeleteAll(`user`, orm.AndCondition(map[string][]interface{}{
+	r, err := group.DeleteAll(`user`, orm.AndWhere(orm.FieldMap{
 		"id": {">", 0},
 	}))
 	if err != nil {

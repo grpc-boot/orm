@@ -9,8 +9,10 @@ import (
 	"github.com/grpc-boot/base"
 )
 
+// RowFormat 格式化数据库行函数
 type RowFormat func(fieldValue map[string][]byte)
 
+// FormatRows 格式化数据库行
 func FormatRows(rows *sql.Rows, handler RowFormat) {
 	fields, err := rows.Columns()
 	if err != nil {
@@ -41,6 +43,7 @@ func FormatRows(rows *sql.Rows, handler RowFormat) {
 	}
 }
 
+// ToMap 格式化数据库行为[]map[string]string
 func ToMap(rows *sql.Rows) ([]map[string]string, error) {
 	fields, err := rows.Columns()
 	if err != nil {
@@ -73,7 +76,8 @@ func ToMap(rows *sql.Rows) ([]map[string]string, error) {
 	return data, nil
 }
 
-func ToObjList(rows *sql.Rows, obj interface{}) (interface{}, error) {
+// ToObjList 格式化数据库行为[]interface{}
+func ToObjList(rows *sql.Rows, obj interface{}) ([]interface{}, error) {
 	v := reflect.ValueOf(obj)
 	if v.Kind() != reflect.Ptr {
 		return nil, ErrInvalidTypes
@@ -184,6 +188,7 @@ func ToObjList(rows *sql.Rows, obj interface{}) (interface{}, error) {
 	return result, nil
 }
 
+// ToObj 格式化数据库行到obj
 func ToObj(rows *sql.Rows, obj interface{}) error {
 	fields, err := rows.Columns()
 	if err != nil {

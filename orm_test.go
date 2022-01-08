@@ -118,7 +118,7 @@ func init() {
 }
 
 func TestCondition_Sql(t *testing.T) {
-	cond := map[string][]interface{}{
+	cond := FieldMap{
 		"id":    {13},
 		"name":  {`LIKE`, "ma%"},
 		"age":   {`BETWEEN`, 10, 20},
@@ -137,7 +137,7 @@ func TestCondition_Sql(t *testing.T) {
 }
 
 func TestWhere_Sql(t *testing.T) {
-	con := OrCondition(map[string][]interface{}{
+	con := OrCondition(FieldMap{
 		"`id`":    {13},
 		"`name`":  {`LIKE`, "ma%"},
 		"`age`":   {`BETWEEN`, 10, 20},
@@ -148,9 +148,7 @@ func TestWhere_Sql(t *testing.T) {
 		"`id`": {`>=`, 13},
 	})
 
-	w := Where{
-		AndWhere(con1), OrWhere(con),
-	}
+	w := NewWhere(con1).Or(con)
 
 	args := base.AcquireArgs()
 	defer base.ReleaseArgs(&args)
@@ -158,20 +156,20 @@ func TestWhere_Sql(t *testing.T) {
 }
 
 func TestMysqlQuery_Sql(t *testing.T) {
-	query := NewMysqlQuery()
+	query := AcquireQuery4Mysql()
 	defer query.Close()
 
 	query.From("`user`").Select("`id`", "`name`")
-	query.Where(OrCondition(map[string][]interface{}{
+	query.Where(OrWhere(FieldMap{
 		"`id`":    {`IN`, 12, 45, 67},
 		"`is_on`": {1},
 	}))
 
-	query.AndWhere(AndCondition(map[string][]interface{}{
+	query.And(AndCondition(FieldMap{
 		"`id`": {`>`, 10},
 	}))
 
-	query.OrWhere(AndCondition(map[string][]interface{}{
+	query.Or(AndCondition(FieldMap{
 		"`sex`": {1},
 	}))
 
@@ -190,10 +188,10 @@ func TestInsert(t *testing.T) {
 	args := base.AcquireArgs()
 	defer base.ReleaseArgs(&args)
 
-	sql := SqlInsert(&args, "`user`", map[string]interface{}{
+	sql := SqlInsert(&args, "`user`", Row{
 		"`name`":       time.Now().String(),
 		"`created_at`": time.Now().UnixNano(),
-	}, map[string]interface{}{
+	}, Row{
 		"`name`":       time.Now().String(),
 		"`created_at`": time.Now().UnixNano(),
 	})
@@ -207,7 +205,7 @@ func TestUpdateAll(t *testing.T) {
 	sql := SqlUpdate(&args, "`user`", map[string]interface{}{
 		"`name`":       time.Now().String(),
 		"`created_at`": time.Now().UnixNano(),
-	}, AndCondition(map[string][]interface{}{
+	}, AndWhere(FieldMap{
 		"`id`": {`IN`, 1, 3, 5},
 	}))
 
@@ -218,7 +216,7 @@ func TestDeleteAll(t *testing.T) {
 	args := base.AcquireArgs()
 	defer base.ReleaseArgs(&args)
 
-	sql := SqlDelete(&args, "`user`", AndCondition(map[string][]interface{}{
+	sql := SqlDelete(&args, "`user`", AndWhere(FieldMap{
 		"`id`": {`IN`, 1, 3, 5},
 	}))
 
@@ -295,7 +293,7 @@ func TestTransaction_Commit(t *testing.T) {
 		cancel()
 	}()
 
-	err = tx.FindOneObjContext(ctx, AndCondition(map[string][]interface{}{
+	err = tx.FindOneObjContext(ctx, AndWhere(FieldMap{
 		"updated_at": {0},
 	}), &user)
 	if err != nil {
@@ -325,10 +323,10 @@ func TestTransaction_Commit(t *testing.T) {
 func BenchmarkMysqlQuery_Sql(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			query := NewMysqlQuery()
+			query := AcquireQuery4Mysql()
 			args := base.AcquireArgs()
 
-			query.From("`user`").Where(AndCondition(map[string][]interface{}{
+			query.From("`user`").Where(AndWhere(FieldMap{
 				"`id`":     {`IN`, 1, 5, 10, 30, 23, 56},
 				"`name`":   {`LIKE`, "dd%"},
 				"`status`": {`>`, 0},
@@ -344,10 +342,10 @@ func BenchmarkMysqlQuery_Sql(b *testing.B) {
 
 func BenchmarkMysqlQuery(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		query := NewMysqlQuery()
+		query := AcquireQuery4Mysql()
 		args := base.AcquireArgs()
 
-		query.From("`user`").Where(AndCondition(map[string][]interface{}{
+		query.From("`user`").Where(AndWhere(FieldMap{
 			"`id`":     {`IN`, 1, 5, 10, 30, 23, 56},
 			"`name`":   {`LIKE`, "dd%"},
 			"`status`": {`>`, 0},

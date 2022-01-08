@@ -7,34 +7,43 @@ import (
 )
 
 var (
-	defaultColumns = "*"
-
 	mysqlQueryPool = &sync.Pool{
 		New: func() interface{} {
-			query := &mysqlQuery{
-				columns: defaultColumns,
-			}
-			return query
+			return &mysqlQuery{}
 		},
 	}
 )
 
+// Query Query对象
 type Query interface {
+	// Select Select表达式
 	Select(columns ...string) Query
+	// From From表达式
 	From(table string) Query
-	Where(condition Condition) Query
-	AndWhere(condition Condition) Query
-	OrWhere(condition Condition) Query
+	// Where Where表达式
+	Where(where Where) Query
+	// And 附加And where
+	And(condition Condition) Query
+	// Or 附加Or where
+	Or(condition Condition) Query
+	// Group Group表达式
 	Group(fields ...string) Query
+	// Having Having表达式
 	Having(having string) Query
+	// Order Order表达式
 	Order(orders ...string) Query
+	// Offset Offset表达式
 	Offset(offset int64) Query
+	// Limit Limit表达式
 	Limit(limit int64) Query
+	// Sql 生成sql
 	Sql(arguments *[]interface{}) (sql string)
+	// Close 释放Query
 	Close()
 }
 
-func NewMysqlQuery() Query {
+// AcquireQuery4Mysql 获取mysqlQuery对象
+func AcquireQuery4Mysql() Query {
 	return mysqlQueryPool.Get().(Query)
 }
 
@@ -55,16 +64,17 @@ type mysqlQuery struct {
 func (mq *mysqlQuery) reset() Query {
 	mq.g = nil
 	mq.table = ""
-	mq.columns = defaultColumns
+	mq.columns = ""
 	mq.offset = 0
 	mq.limit = 0
 	mq.group = ""
 	mq.having = ""
 	mq.order = ""
 
-	if len(mq.where) > 0 {
-		mq.where = mq.where[:0]
+	if mq.where != nil {
+		mq.where.Reset()
 	}
+
 	return mq
 }
 
@@ -78,25 +88,18 @@ func (mq *mysqlQuery) From(table string) Query {
 	return mq
 }
 
-func (mq *mysqlQuery) Where(condition Condition) Query {
-	if len(mq.where) == 0 {
-		mq.where = Where{AndWhere(condition)}
-	} else {
-		mq.where = append(mq.where, AndWhere(condition))
-	}
+func (mq *mysqlQuery) Where(where Where) Query {
+	mq.where = where
 	return mq
 }
 
-func (mq *mysqlQuery) AndWhere(condition Condition) Query {
-	return mq.Where(condition)
+func (mq *mysqlQuery) And(condition Condition) Query {
+	mq.where.And(condition)
+	return mq
 }
 
-func (mq *mysqlQuery) OrWhere(condition Condition) Query {
-	if len(mq.where) == 0 {
-		mq.where = Where{OrWhere(condition)}
-	} else {
-		mq.where = append(mq.where, OrWhere(condition))
-	}
+func (mq *mysqlQuery) Or(condition Condition) Query {
+	mq.where.Or(condition)
 	return mq
 }
 
@@ -137,14 +140,21 @@ func (mq *mysqlQuery) Sql(arguments *[]interface{}) (sql string) {
 	)
 
 	sqlBuffer.WriteString(`SELECT `)
-	sqlBuffer.WriteString(mq.columns)
+
+	if mq.columns == "" {
+		sqlBuffer.WriteString("*")
+	} else {
+		sqlBuffer.WriteString(mq.columns)
+	}
+
 	sqlBuffer.WriteString(` FROM `)
 	sqlBuffer.WriteString(mq.table)
 
-	if len(mq.where) > 0 {
+	if mq.where != nil && mq.where.HasWhere() {
 		whereStr = mq.where.Sql(arguments)
 		sqlBuffer.WriteString(whereStr)
 	}
+
 	sqlBuffer.WriteString(mq.group)
 	sqlBuffer.WriteString(mq.having)
 	sqlBuffer.WriteString(mq.order)
