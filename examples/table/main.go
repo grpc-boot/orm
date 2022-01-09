@@ -30,8 +30,11 @@ func main() {
 		base.RedFatal("query table err:%s", err.Error())
 	}
 
+	base.Green("%+v", tableList)
+
+	var t *orm.Table
 	for _, table := range tableList {
-		t, err := group.Table(table, false)
+		t, err = group.Table(table, false)
 		if err != nil {
 			base.RedFatal("query table info err:%s", err.Error())
 		}
