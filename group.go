@@ -36,6 +36,11 @@ type Group interface {
 	Exec(sqlStr string, args ...interface{}) (result sql.Result, err error)
 	// ExecContext with context 执行
 	ExecContext(ctx context.Context, sqlStr string, args ...interface{}) (result sql.Result, err error)
+
+	// Tables 获取表列表
+	Tables(pattern string, useMaster bool) (tableList []string, err error)
+	Table(table string, useMaster bool) (t *Table, err error)
+
 	// InsertObj 插入对象
 	InsertObj(obj interface{}) (result sql.Result, err error)
 	// InsertObjContext with context 插入对象
@@ -76,6 +81,7 @@ type Group interface {
 	UpdateAll(table string, set Row, where Where) (result sql.Result, err error)
 	// UpdateAllContext with context 更新
 	UpdateAllContext(ctx context.Context, table string, set Row, where Where) (result sql.Result, err error)
+
 	// Begin 开启事务
 	Begin() (Transaction, error)
 	// BeginTx with context 开启事务

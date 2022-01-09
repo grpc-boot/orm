@@ -144,7 +144,7 @@ func TestWhere_Sql(t *testing.T) {
 		"`month`": {`IN`, 1, 6, 7},
 	})
 
-	con1 := OrCondition(map[string][]interface{}{
+	con1 := OrCondition(FieldMap{
 		"`id`": {`>=`, 13},
 	})
 
@@ -202,7 +202,7 @@ func TestUpdateAll(t *testing.T) {
 	args := base.AcquireArgs()
 	defer base.ReleaseArgs(&args)
 
-	sql := SqlUpdate(&args, "`user`", map[string]interface{}{
+	sql := SqlUpdate(&args, "`user`", Row{
 		"`name`":       time.Now().String(),
 		"`created_at`": time.Now().UnixNano(),
 	}, AndWhere(FieldMap{
@@ -395,7 +395,7 @@ func BenchmarkDeleteByObj(b *testing.B) {
 func BenchmarkGroup_Insert(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_, err := g.Insert(`user`, map[string]interface{}{
+			_, err := g.Insert(`user`, Row{
 				"nickname": strconv.FormatInt(time.Now().UnixNano(), 10),
 			})
 			if err != nil {
