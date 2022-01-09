@@ -1,11 +1,9 @@
 # 目录
 <!-- TOC -->
 - [orm](#orm)
-    - [1.实例化](#实例化)
-    - [2.Option解析](#Option解析)
-    - [3.在gin中使用](#在gin中使用)
-    - [4.用redis做options配置存储](#用redis做options配置存储)
-    - [5.用mysql做options配置存储](#用mysql做options配置存储)
+    - [1.显示所有数据库表，并将表结构转换为golang结构体](#显示所有数据库表)
+    - [2.insert语句](#insert语句)
+    - [3.select语句](#select语句)
 
 <!-- /TOC -->
 
@@ -62,7 +60,7 @@ CREATE TABLE `user` (
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8;
 ```
 
-## 显示所有数据库表，并将表结构转换为golang结构体
+## 显示所有数据库表
 
 > 代码
 
@@ -148,5 +146,83 @@ type User struct {
 }
 ```
 
+## insert语句
+
+> 代码：
+
+```text
+// insert1 INSERT INTO `user`(`nickname`,`created_at`,`is_on`)VALUES(?, ?, ?)
+func insert1() {
+	res, err := group.Insert("`user`", orm.Row{
+		"`nickname`": time.Now().String()[0:22],
+		"`created_at`": time.Now().Unix(),
+		"`is_on`": 1,
+	})
+	if err != nil {
+		base.RedFatal("insert err:%s", err.Error())
+	}
+
+	id, _ := res.LastInsertId()
+
+	base.Green("insert id:%d", id)
+}
+```
+
+> 输出：
+
+```text
+insert id:1
+```
+
+## select语句
+
+### 简单查询
+
+> 代码
+
+```text
+// select1 SELECT * FROM `user` LIMIT 10
+func select1() {
+	query := orm.AcquireQuery4Mysql()
+	defer query.Close()
+
+	query.From("`user`").Limit(10)
+	rows, err := group.Find(query, false)
+	if err != nil {
+		base.RedFatal("query err:%s", err.Error())
+	}
+
+	d, _ := jsoniter.Marshal(rows)
+	base.Green("select 1: %s", d)
+}
+```
+
+### 带Where条件
+
+> 代码
+
+```text
+// select2 SELECT `id`, `nickname`, `is_on` FROM `user` WHERE `is_on`=1 ORDER BY `id` DESC,`created_at` DESC LIMIT 10
+func select2() {
+	query := orm.AcquireQuery4Mysql()
+	defer query.Close()
+
+	query.Select("`id`", "`nickname`", "`is_on`").
+		From("`user`").
+		Where(orm.AndWhere(orm.FieldMap{
+			"`is_on`":{ 1 },
+		})).
+		Order("`id` DESC", "`created_at` DESC").
+		Limit(10)
+
+	rows, err := group.Find(query, true)
+	if err != nil {
+		base.RedFatal("query err:%s", err.Error())
+	}
+
+	d, _ := jsoniter.Marshal(rows)
+	base.Green("select 2: %s", d)
+}
+```
 
 
