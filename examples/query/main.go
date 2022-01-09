@@ -38,9 +38,9 @@ func main() {
 	insert1()
 	select1()
 	select2()
+	select3()
 }
 
-// insert1 INSERT INTO `user`(`nickname`,`created_at`,`is_on`)VALUES(?, ?, ?)
 func insert1() {
 	res, err := group.Insert("`user`", orm.Row{
 		"`nickname`":   time.Now().String()[0:22],
@@ -56,7 +56,6 @@ func insert1() {
 	base.Green("insert id:%d", id)
 }
 
-// select1 SELECT * FROM `user` LIMIT 10
 func select1() {
 	query := orm.AcquireQuery4Mysql()
 	defer query.Close()
@@ -67,11 +66,14 @@ func select1() {
 		base.RedFatal("query err:%s", err.Error())
 	}
 
-	d, _ := jsoniter.Marshal(rows)
-	base.Green("select 1: %s", d)
+	var (
+		d, _ = jsoniter.Marshal(rows)
+		args = []interface{}{}
+	)
+
+	base.Green("sql: %s \nselect 1: %s", query.Sql(&args), d)
 }
 
-// select2 SELECT `id`, `nickname`, `is_on` FROM `user` WHERE `is_on`=1 ORDER BY `id` DESC,`created_at` DESC LIMIT 10
 func select2() {
 	query := orm.AcquireQuery4Mysql()
 	defer query.Close()
@@ -89,6 +91,43 @@ func select2() {
 		base.RedFatal("query err:%s", err.Error())
 	}
 
-	d, _ := jsoniter.Marshal(rows)
-	base.Green("select 2: %s", d)
+	var (
+		d, _ = jsoniter.Marshal(rows)
+		args = []interface{}{}
+	)
+
+	base.Green("sql: %s \nselect 2: %s", query.Sql(&args), d)
+}
+
+func select3() {
+	query := orm.AcquireQuery4Mysql()
+	defer query.Close()
+
+	query.Select("`id`", "`nickname`", "`is_on`").
+		From("`user`").
+		Where(orm.AndWhere(orm.FieldMap{
+			"`is_on`": {1},
+		})).
+		Or(orm.AndCondition(orm.FieldMap{
+			"`id`":       {"IN", 1, 2, 3, 4, 5, 6},
+			"`nickname`": {"LIKE", "2022%"},
+		})).
+		And(orm.OrCondition(orm.FieldMap{
+			"created_at": {"<=", time.Now().Unix()},
+			"updated_at": {0},
+		})).
+		Order("`id` DESC", "`created_at` DESC").
+		Limit(10)
+
+	rows, err := group.Find(query, true)
+	if err != nil {
+		base.RedFatal("query err:%s", err.Error())
+	}
+
+	var (
+		d, _ = jsoniter.Marshal(rows)
+		args = []interface{}{}
+	)
+
+	base.Green("sql: %s \nselect 3: %s", query.Sql(&args), d)
 }

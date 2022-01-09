@@ -181,7 +181,6 @@ insert id:1
 > 代码
 
 ```text
-// select1 SELECT * FROM `user` LIMIT 10
 func select1() {
 	query := orm.AcquireQuery4Mysql()
 	defer query.Close()
@@ -192,9 +191,20 @@ func select1() {
 		base.RedFatal("query err:%s", err.Error())
 	}
 
-	d, _ := jsoniter.Marshal(rows)
-	base.Green("select 1: %s", d)
+	var (
+		d, _ = jsoniter.Marshal(rows)
+		args = []interface{}{}
+	)
+
+	base.Green("sql: %s \nselect 1: %s", query.Sql(&args), d)
 }
+```
+
+> 输出
+
+```text
+sql: SELECT * FROM `user` LIMIT 0,10 
+select 1: [{"is_on":"0","id":"1","nickname":"m_2022-01-08 22:22:29","created_at":"1641651749","updated_at":"0"},{"id":"3","nickname":"2022-01-09 17:05:14.07","created_at":"1641719114","updated_at":"0","is_on":"1"},{"id":"4","nickname":"2022-01-09 17:05:21.03","created_at":"1641719121","updated_at":"0","is_on":"1"},{"is_on":"1","id":"5","nickname":"2022-01-09 17:05:24.97","created_at":"1641719124","updated_at":"0"},{"created_at":"1641719144","updated_at":"0","is_on":"1","id":"6","nickname":"2022-01-09 17:05:44.13"},{"created_at":"1641719449","updated_at":"0","is_on":"1","id":"7","nickname":"2022-01-09 17:10:49.81"},{"id":"8","nickname":"2022-01-09 17:11:20.00","created_at":"1641719480","updated_at":"0","is_on":"1"},{"updated_at":"0","is_on":"1","id":"9","nickname":"2022-01-09 17:11:45.41","created_at":"1641719505"},{"created_at":"1641719578","updated_at":"0","is_on":"1","id":"10","nickname":"2022-01-09 17:12:58.31"},{"id":"11","nickname":"2022-01-09 17:24:21.37","created_at":"1641720261","updated_at":"0","is_on":"1"}]
 ```
 
 ### 带Where条件
@@ -202,7 +212,6 @@ func select1() {
 > 代码
 
 ```text
-// select2 SELECT `id`, `nickname`, `is_on` FROM `user` WHERE `is_on`=1 ORDER BY `id` DESC,`created_at` DESC LIMIT 10
 func select2() {
 	query := orm.AcquireQuery4Mysql()
 	defer query.Close()
@@ -210,7 +219,7 @@ func select2() {
 	query.Select("`id`", "`nickname`", "`is_on`").
 		From("`user`").
 		Where(orm.AndWhere(orm.FieldMap{
-			"`is_on`":{ 1 },
+			"`is_on`": {1},
 		})).
 		Order("`id` DESC", "`created_at` DESC").
 		Limit(10)
@@ -220,9 +229,67 @@ func select2() {
 		base.RedFatal("query err:%s", err.Error())
 	}
 
-	d, _ := jsoniter.Marshal(rows)
-	base.Green("select 2: %s", d)
+	var (
+		d, _ = jsoniter.Marshal(rows)
+		args = []interface{}{}
+	)
+
+	base.Green("sql: %s \nselect 2: %s", query.Sql(&args), d)
 }
 ```
+
+> 输出
+
+```text
+sql: SELECT `id`,`nickname`,`is_on` FROM `user` WHERE (`is_on` = ?) ORDER BY `id` DESC,`created_at` DESC LIMIT 0,10 
+select 2: [{"is_on":"1","id":"15","nickname":"2022-01-09 17:27:28.79"},{"id":"14","nickname":"2022-01-09 17:26:23.29","is_on":"1"},{"id":"13","nickname":"2022-01-09 17:26:12.72","is_on":"1"},{"is_on":"1","id":"12","nickname":"2022-01-09 17:24:42.33"},{"id":"11","nickname":"2022-01-09 17:24:21.37","is_on":"1"},{"id":"10","nickname":"2022-01-09 17:12:58.31","is_on":"1"},{"id":"9","nickname":"2022-01-09 17:11:45.41","is_on":"1"},{"id":"8","nickname":"2022-01-09 17:11:20.00","is_on":"1"},{"id":"7","nickname":"2022-01-09 17:10:49.81","is_on":"1"},{"nickname":"2022-01-09 17:05:44.13","is_on":"1","id":"6"}]
+```
+
+### 复杂Where条件
+
+> 代码
+
+```text
+func select3() {
+	query := orm.AcquireQuery4Mysql()
+	defer query.Close()
+
+	query.Select("`id`", "`nickname`", "`is_on`").
+		From("`user`").
+		Where(orm.AndWhere(orm.FieldMap{
+			"`is_on`": {1},
+		})).
+		Or(orm.AndCondition(orm.FieldMap{
+			"`id`":{"IN", 1, 2, 3, 4, 5, 6},
+			"`nickname`":{"LIKE", "2022%"},
+	    })).
+		And(orm.OrCondition(orm.FieldMap{
+			"created_at":{"<=", time.Now().Unix()},
+			"updated_at":{0},
+		})).
+		Order("`id` DESC", "`created_at` DESC").
+		Limit(10)
+
+	rows, err := group.Find(query, true)
+	if err != nil {
+		base.RedFatal("query err:%s", err.Error())
+	}
+
+	var (
+		d, _ = jsoniter.Marshal(rows)
+		args = []interface{}{}
+	)
+
+	base.Green("sql: %s \nselect 3: %s", query.Sql(&args), d)
+}
+```
+
+> 输出
+
+```text
+sql: SELECT `id`,`nickname`,`is_on` FROM `user` WHERE (`is_on` = ?) OR (`id` IN(?,?,?,?,?,?) AND `nickname` LIKE ?) AND (created_at <= ? OR updated_at = ?) ORDER BY `id` DESC,`created_at` DESC LIMIT 0,10 
+select 3: [{"id":"15","nickname":"2022-01-09 17:27:28.79","is_on":"1"},{"id":"14","nickname":"2022-01-09 17:26:23.29","is_on":"1"},{"is_on":"1","id":"13","nickname":"2022-01-09 17:26:12.72"},{"id":"12","nickname":"2022-01-09 17:24:42.33","is_on":"1"},{"nickname":"2022-01-09 17:24:21.37","is_on":"1","id":"11"},{"id":"10","nickname":"2022-01-09 17:12:58.31","is_on":"1"},{"id":"9","nickname":"2022-01-09 17:11:45.41","is_on":"1"},{"nickname":"2022-01-09 17:11:20.00","is_on":"1","id":"8"},{"id":"7","nickname":"2022-01-09 17:10:49.81","is_on":"1"},{"id":"6","nickname":"2022-01-09 17:05:44.13","is_on":"1"}]
+```
+
 
 
