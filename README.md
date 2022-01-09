@@ -11,6 +11,57 @@
 
 # orm
 
+> 数据库及表信息
+
+```text
+数据库：
+host: 127.0.0.1
+port: 3306
+userName: root
+password: 123456
+database: dd
+
+表结构：
+CREATE TABLE `gateway` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `name` varchar(32) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT '' COMMENT '名称',
+  `path` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT '' COMMENT '路径',
+  `second_limit` int DEFAULT '5000' COMMENT '每秒请求数',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `path` (`path`)
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8;
+
+CREATE TABLE `orm` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `lid` bigint(10) unsigned zerofill DEFAULT '0000000000' COMMENT '逻辑ID',
+  `name` varchar(32) DEFAULT NULL COMMENT '名字',
+  `pwd` char(32) DEFAULT NULL COMMENT '密码',
+  `created_at` timestamp(6) NULL DEFAULT NULL COMMENT '创建时间',
+  `updated_at` datetime DEFAULT NULL COMMENT '修改时间',
+  `remark` text COMMENT '备注',
+  `price` decimal(18,2) unsigned zerofill DEFAULT '0000000000000000.00' COMMENT '价格',
+  `is_on` bit(19) DEFAULT b'1' COMMENT '是否启用',
+  `logo` blob COMMENT '头像',
+  `amount` float(12,4) unsigned DEFAULT '0.0000' COMMENT '总量',
+  `dfd` bigint unsigned NOT NULL DEFAULT '3' COMMENT '余额',
+  `sdf` set('1','2','3','4') NOT NULL DEFAULT '' COMMENT 'set测试',
+  `em` enum('1','3','5','7') NOT NULL DEFAULT '1' COMMENT 'enum测试',
+  `jn_` json NOT NULL COMMENT 'json测试',
+  PRIMARY KEY (`id`),
+  KEY `is_on` (`is_on`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8;
+
+CREATE TABLE `user` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT '用户ID',
+  `nickname` varchar(32) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT '' COMMENT '昵称',
+  `created_at` bigint unsigned DEFAULT NULL COMMENT '创建时间',
+  `updated_at` bigint unsigned DEFAULT '0' COMMENT '更新时间',
+  `is_on` tinyint unsigned DEFAULT '0' COMMENT '启用状态',
+  PRIMARY KEY (`id`),
+  KEY `created_at` (`created_at`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8;
+```
+
 ## 显示所有数据库表，并将表结构转换为golang结构体
 
 > 代码
