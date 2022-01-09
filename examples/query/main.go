@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/grpc-boot/base"
@@ -34,8 +36,31 @@ func init() {
 	}
 }
 
+type User struct {
+	Id        int64  `borm:"id,primary"`
+	NickName  string `borm:"nickname"`
+	IsOn      uint8  `borm:"is_on,required"`
+	CreatedAt int64  `borm:"created_at"`
+	UpdatedAt int64  `borm:"updated_at"`
+}
+
+func (u *User) TableName() string {
+	return `user`
+}
+
+// BeforeCreate insert时候执行
+func (u *User) BeforeCreate() {
+	u.CreatedAt = time.Now().Unix()
+}
+
+// BeforeSave insert与update均会执行
+func (u *User) BeforeSave() {
+	u.UpdatedAt = time.Now().Unix()
+}
+
 func main() {
 	insert1()
+	insert2()
 	select1()
 	select2()
 	select3()
@@ -47,6 +72,22 @@ func insert1() {
 		"`created_at`": time.Now().Unix(),
 		"`is_on`":      1,
 	})
+	if err != nil {
+		base.RedFatal("insert err:%s", err.Error())
+	}
+
+	id, _ := res.LastInsertId()
+
+	base.Green("insert id:%d", id)
+}
+
+func insert2() {
+	u := User{
+		NickName: fmt.Sprintf("orm_%s", time.Now().String()[0:22]),
+		IsOn:     uint8(rand.Intn(1)),
+	}
+
+	res, err := group.InsertObj(&u)
 	if err != nil {
 		base.RedFatal("insert err:%s", err.Error())
 	}
