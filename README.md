@@ -150,7 +150,7 @@ type User struct {
 
 > 代码：
 
-```text
+```go
 // insert1 INSERT INTO `user`(`nickname`,`created_at`,`is_on`)VALUES(?, ?, ?)
 func insert1() {
 	res, err := group.Insert("`user`", orm.Row{
@@ -180,7 +180,7 @@ insert id:1
 
 > 代码
 
-```text
+```go
 func select1() {
 	query := orm.AcquireQuery4Mysql()
 	defer query.Close()
@@ -211,7 +211,7 @@ select 1: [{"is_on":"0","id":"1","nickname":"m_2022-01-08 22:22:29","created_at"
 
 > 代码
 
-```text
+```go
 func select2() {
 	query := orm.AcquireQuery4Mysql()
 	defer query.Close()
@@ -249,7 +249,7 @@ select 2: [{"is_on":"1","id":"15","nickname":"2022-01-09 17:27:28.79"},{"id":"14
 
 > 代码
 
-```text
+```go
 func select3() {
 	query := orm.AcquireQuery4Mysql()
 	defer query.Close()
